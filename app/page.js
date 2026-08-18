@@ -6,6 +6,9 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
+// YÖNETİCİ E-POSTA ADRESİNİZ (Bu adrese sahip kullanıcı Admin Panelini görebilir)
+const ADMIN_EMAIL = 'omerfarukeker23@gmail.com'; 
+
 export default function Home() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -13,15 +16,26 @@ export default function Home() {
   const [user, setUser] = useState(null);
   const [message, setMessage] = useState(null);
 
-  // Panel Durumları (State)
-  const [activeTab, setActiveTab] = useState('hastalar'); // 'hastalar' veya 'receteler'
+  // Sekme Durumu ('hastalar' veya 'admin')
+  const [activeTab, setActiveTab] = useState('hastalar');
+
+  // Panel Durumları
   const [hastalar, setHastalar] = useState([]);
-  const [receteler, setReceteler] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedHasta, setSelectedHasta] = useState(null);
+
+  // Seçili Hastanın Detay Verileri
+  const [hastaReceteler, setHastaReceteler] = useState([]);
+  const [hastaRaporlar, setHastaRaporlar] = useState([]);
 
   // Form Durumları
   const [yeniHasta, setYeniHasta] = useState({ tc: '', ad: '', soyad: '', telefon: '' });
-  const [yeniRecete, setYeniRecete] = useState({ hasta_id: '', ilac_adi: '', doz: '', tarih: '' });
+  const [yeniRecete, setYeniRecete] = useState({ ilac_adi: '', doz: '', tarih: '' });
+  const [yeniRapor, setYeniRapor] = useState({ rapor_adi: '', baslangic_tarihi: '', bitis_tarihi: '', notlar: '' });
+
+  // Admin Paneli Verileri
+  const [adminUsers, setAdminUsers] = useState([]);
+  const [adminLoading, setAdminLoading] = useState(false);
 
   // Oturum Kontrolü
   useEffect(() => {
@@ -36,25 +50,57 @@ export default function Home() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // Verileri Çek
+  // Hastaları Çek
   useEffect(() => {
-    if (user) {
-      fetchHastalar();
-      fetchReceteler();
+    if (user && activeTab === 'hastalar') fetchHastalar();
+    if (user && activeTab === 'admin') fetchAdminStats();
+  }, [user, activeTab]);
+
+  // Klasör Açılınca O Hastanın Reçete ve Raporlarını Çek
+  useEffect(() => {
+    if (selectedHasta && user) {
+      fetchHastaDetaylari(selectedHasta.id);
     }
-  }, [user]);
+  }, [selectedHasta, user]);
 
   const fetchHastalar = async () => {
-    const { data } = await supabase.from('hastalar').select('*').order('created_at', { ascending: false });
+    const { data } = await supabase
+      .from('hastalar')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false });
+    
     if (data) setHastalar(data);
   };
 
-  const fetchReceteler = async () => {
-    const { data } = await supabase.from('receteler').select('*, hastalar(ad, soyad, tc)').order('created_at', { ascending: false });
-    if (data) setReceteler(data);
+  const fetchHastaDetaylari = async (hastaId) => {
+    const { data: receteData } = await supabase
+      .from('receteler')
+      .select('*')
+      .eq('hasta_id', hastaId)
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false });
+    if (receteData) setHastaReceteler(receteData);
+
+    const { data: raporData } = await supabase
+      .from('raporlar')
+      .select('*')
+      .eq('hasta_id', hastaId)
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false });
+    if (raporData) setHastaRaporlar(raporData);
   };
 
-  // Auth İşlemleri
+  // Admin İstatistiklerini Çek
+  const fetchAdminStats = async () => {
+    setAdminLoading(true);
+    const { data, error } = await supabase.rpc('get_admin_dashboard_stats');
+    if (data) setAdminUsers(data);
+    if (error) console.error('Admin istatistik hatası:', error);
+    setAdminLoading(false);
+  };
+
+  // Auth
   const handleAuth = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -67,7 +113,7 @@ export default function Home() {
       if (signUpRes.error) {
         setMessage({ type: 'error', text: signUpRes.error.message });
       } else {
-        setMessage({ type: 'success', text: 'Kayıt başarılı! Giriş yapabilirsiniz.' });
+        setMessage({ type: 'success', text: 'Kayıt başarılı! E-posta adresinize gelen doğrulama bağlantısına tıklayın.' });
       }
       setLoading(false);
       return;
@@ -84,71 +130,80 @@ export default function Home() {
   // Hasta Ekleme
   const handleHastaEkle = async (e) => {
     e.preventDefault();
-    const { error } = await supabase.from('hastalar').insert([yeniHasta]);
+    const { error } = await supabase.from('hastalar').insert([{
+      ...yeniHasta,
+      user_id: user.id
+    }]);
+    
     if (error) {
-      alert('Hasta eklenirken hata oluştu: ' + error.message);
+      alert('Hasta eklenirken hata: ' + error.message);
     } else {
       setYeniHasta({ tc: '', ad: '', soyad: '', telefon: '' });
       fetchHastalar();
-      alert('Hasta başarıyla eklendi!');
+      alert('Hasta klasörü başarıyla oluşturuldu!');
     }
   };
 
-  // Reçete Ekleme
+  // İlaç/Reçete Ekleme
   const handleReceteEkle = async (e) => {
     e.preventDefault();
-    const { error } = await supabase.from('receteler').insert([yeniRecete]);
+    const { error } = await supabase.from('receteler').insert([{
+      ...yeniRecete,
+      hasta_id: selectedHasta.id,
+      user_id: user.id
+    }]);
+    
     if (error) {
-      alert('Reçete eklenirken hata oluştu: ' + error.message);
+      alert('İlaç eklenirken hata: ' + error.message);
     } else {
-      setYeniRecete({ hasta_id: '', ilac_adi: '', doz: '', tarih: '' });
-      fetchReceteler();
-      alert('Reçete başarıyla eklendi!');
+      setYeniRecete({ ilac_adi: '', doz: '', tarih: '' });
+      fetchHastaDetaylari(selectedHasta.id);
+      alert('İlaç hasta klasörüne eklendi!');
     }
   };
 
-  // Filtreleme
+  // Rapor Ekleme
+  const handleRaporEkle = async (e) => {
+    e.preventDefault();
+    const { error } = await supabase.from('raporlar').insert([{
+      ...yeniRapor,
+      hasta_id: selectedHasta.id,
+      user_id: user.id
+    }]);
+    
+    if (error) {
+      alert('Rapor eklenirken hata: ' + error.message);
+    } else {
+      setYeniRapor({ rapor_adi: '', baslangic_tarihi: '', bitis_tarihi: '', notlar: '' });
+      fetchHastaDetaylari(selectedHasta.id);
+      alert('Rapor hasta klasörüne kaydedildi!');
+    }
+  };
+
   const filteredHastalar = hastalar.filter(h => 
     h.ad?.toLowerCase().includes(searchTerm.toLowerCase()) || 
     h.soyad?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     h.tc?.includes(searchTerm)
   );
 
+  const isAdmin = user?.email === ADMIN_EMAIL;
+
   return (
-    <div style={{
-      minHeight: '100vh',
-      backgroundColor: '#0f172a',
-      fontFamily: 'system-ui, -apple-system, sans-serif',
-      color: '#f8fafc',
-      padding: '20px'
-    }}>
+    <div style={{ minHeight: '100vh', backgroundColor: '#0f172a', fontFamily: 'system-ui, -apple-system, sans-serif', color: '#f8fafc', padding: '20px' }}>
       {!user ? (
         /* GİRİŞ EKRANI */
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '80vh' }}>
-          <div style={{
-            backgroundColor: '#1e293b',
-            border: '1px solid #334155',
-            borderRadius: '16px',
-            padding: '32px',
-            width: '100%',
-            maxWidth: '400px'
-          }}>
+          <div style={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '16px', padding: '32px', width: '100%', maxWidth: '400px' }}>
             <div style={{ textAlign: 'center', marginBottom: '24px' }}>
               <div style={{ fontSize: '40px', marginBottom: '8px' }}>💊</div>
               <h1 style={{ fontSize: '22px', fontWeight: 'bold' }}>Eczane Takip</h1>
               <p style={{ fontSize: '13px', color: '#94a3b8' }}>Giriş yapın veya kayıt olun</p>
             </div>
-
             {message && (
-              <div style={{
-                padding: '12px', borderRadius: '8px', fontSize: '13px', marginBottom: '16px',
-                backgroundColor: message.type === 'error' ? '#451a1a' : '#064e3b',
-                color: message.type === 'error' ? '#fca5a5' : '#6ee7b7'
-              }}>
+              <div style={{ padding: '12px', borderRadius: '8px', fontSize: '13px', marginBottom: '16px', backgroundColor: message.type === 'error' ? '#451a1a' : '#064e3b', color: message.type === 'error' ? '#fca5a5' : '#6ee7b7' }}>
                 {message.text}
               </div>
             )}
-
             <form onSubmit={handleAuth}>
               <div style={{ marginBottom: '16px' }}>
                 <label style={{ display: 'block', fontSize: '12px', color: '#94a3b8', marginBottom: '6px' }}>E-POSTA</label>
@@ -158,138 +213,225 @@ export default function Home() {
                 <label style={{ display: 'block', fontSize: '12px', color: '#94a3b8', marginBottom: '6px' }}>ŞİFRE</label>
                 <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" style={inputStyle} />
               </div>
-              <button type="submit" disabled={loading} style={btnPrimaryStyle}>
-                {loading ? 'Bekleyin...' : 'Giriş Yap / Kayıt Ol'}
-              </button>
+              <button type="submit" disabled={loading} style={btnPrimaryStyle}>{loading ? 'Bekleyin...' : 'Giriş Yap / Kayıt Ol'}</button>
             </form>
           </div>
         </div>
       ) : (
-        /* YÖNETİM PANELİ */
-        <div style={{ maxWidth: '1000px', margin: '0 auto' }}>
+        /* ANA PANEL */
+        <div style={{ maxWidth: '1100px', margin: '0 auto' }}>
           {/* Header */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', paddingBottom: '16px', borderBottom: '1px solid #334155' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <span style={{ fontSize: '32px' }}>💊</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+              <span style={{ fontSize: '32px' }}>📂</span>
               <div>
                 <h1 style={{ fontSize: '20px', fontWeight: 'bold', margin: 0 }}>Eczane Takip Sistemi</h1>
-                <p style={{ fontSize: '12px', color: '#94a3b8', margin: 0 }}>{user.email}</p>
+                <p style={{ fontSize: '12px', color: '#38bdf8', margin: 0 }}>{user.email} {isAdmin && '👑 (Yönetici)'}</p>
               </div>
             </div>
-            <button onClick={() => supabase.auth.signOut()} style={{ backgroundColor: '#ef4444', color: 'white', border: 'none', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>
-              Çıkış Yap
-            </button>
+
+            {/* Navigasyon / Çıkış */}
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button 
+                onClick={() => { setActiveTab('hastalar'); setSelectedHasta(null); }}
+                style={{ ...navBtnStyle, backgroundColor: activeTab === 'hastalar' ? '#3b82f6' : '#334155' }}
+              >
+                📁 Hastalarım
+              </button>
+
+              {isAdmin && (
+                <button 
+                  onClick={() => setActiveTab('admin')}
+                  style={{ ...navBtnStyle, backgroundColor: activeTab === 'admin' ? '#ef4444' : '#334155' }}
+                >
+                  👑 Admin Paneli
+                </button>
+              )}
+
+              <button onClick={() => { setSelectedHasta(null); supabase.auth.signOut(); }} style={{ ...navBtnStyle, backgroundColor: '#64748b' }}>Çıkış</button>
+            </div>
           </div>
 
-          {/* Tab Butonları */}
-          <div style={{ display: 'flex', gap: '12px', marginBottom: '20px' }}>
-            <button onClick={() => setActiveTab('hastalar')} style={activeTab === 'hastalar' ? tabActiveStyle : tabInactiveStyle}>
-              👥 Hasta Yönetimi
-            </button>
-            <button onClick={() => setActiveTab('receteler')} style={activeTab === 'receteler' ? tabActiveStyle : tabInactiveStyle}>
-              📋 Reçete Kayıtları
-            </button>
-          </div>
-
-          {/* HASTA YÖNETİMİ TABI */}
-          {activeTab === 'hastalar' && (
+          {/* ADMIN PANELI EKRANI */}
+          {activeTab === 'admin' && isAdmin && (
             <div>
-              {/* Hasta Ekleme Formu */}
-              <div style={cardStyle}>
-                <h3 style={{ marginTop: 0, marginBottom: '16px', color: '#38bdf8' }}>Yeni Hasta Ekle</h3>
-                <form onSubmit={handleHastaEkle} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
-                  <input placeholder="T.C. Kimlik No" value={yeniHasta.tc} onChange={e => setYeniHasta({...yeniHasta, tc: e.target.value})} required style={inputStyle} />
-                  <input placeholder="Ad" value={yeniHasta.ad} onChange={e => setYeniHasta({...yeniHasta, ad: e.target.value})} required style={inputStyle} />
-                  <input placeholder="Soyad" value={yeniHasta.soyad} onChange={e => setYeniHasta({...yeniHasta, soyad: e.target.value})} required style={inputStyle} />
-                  <input placeholder="Telefon" value={yeniHasta.telefon} onChange={e => setYeniHasta({...yeniHasta, telefon: e.target.value})} style={inputStyle} />
-                  <button type="submit" style={{ ...btnPrimaryStyle, gridColumn: '1 / -1' }}>Hastayı Kaydet</button>
-                </form>
-              </div>
-
-              {/* Hasta Listesi & Arama */}
               <div style={cardStyle}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                  <h3 style={{ margin: 0 }}>Kayitli Hastalar ({filteredHastalar.length})</h3>
-                  <input placeholder="Arama yap (Ad, Soyad, TC)..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} style={{ ...inputStyle, width: '250px' }} />
+                  <h2 style={{ margin: 0, color: '#f87171' }}>👑 Sistemdeki Eczacılar ve Kullanıcılar</h2>
+                  <button onClick={fetchAdminStats} style={{ ...navBtnStyle, backgroundColor: '#1e293b', border: '1px solid #475569' }}>🔄 Yenile</button>
                 </div>
-
-                <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-                    <thead>
-                      <tr style={{ borderBottom: '1px solid #334155', color: '#94a3b8' }}>
-                        <th style={thStyle}>TC</th>
-                        <th style={thStyle}>AD SOYAD</th>
-                        <th style={thStyle}>TELEFON</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredHastalar.map(h => (
-                        <tr key={h.id} style={{ borderBottom: '1px solid #1e293b' }}>
-                          <td style={tdStyle}>{h.tc}</td>
-                          <td style={tdStyle}>{h.ad} {h.soyad}</td>
-                          <td style={tdStyle}>{h.telefon || '-'}</td>
+                
+                {adminLoading ? (
+                  <p style={{ color: '#94a3b8' }}>Kullanıcı verileri yükleniyor...</p>
+                ) : (
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '14px' }}>
+                      <thead>
+                        <tr style={{ borderBottom: '1px solid #334155', color: '#94a3b8' }}>
+                          <th style={{ padding: '12px' }}>E-Posta</th>
+                          <th style={{ padding: '12px' }}>Doğrulama</th>
+                          <th style={{ padding: '12px' }}>Hasta Sayısı</th>
+                          <th style={{ padding: '12px' }}>Reçete</th>
+                          <th style={{ padding: '12px' }}>Rapor</th>
+                          <th style={{ padding: '12px' }}>Kayıt Tarihi</th>
                         </tr>
-                      ))}
-                      {filteredHastalar.length === 0 && (
-                        <tr><td colSpan="3" style={{ ...tdStyle, textAlign: 'center', color: '#64748b' }}>Hasta bulunamadı.</td></tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
+                      </thead>
+                      <tbody>
+                        {adminUsers.map(u => (
+                          <tr key={u.user_id} style={{ borderBottom: '1px solid #1e293b' }}>
+                            <td style={{ padding: '12px', fontWeight: 'bold' }}>{u.email}</td>
+                            <td style={{ padding: '12px' }}>
+                              {u.email_confirmed_at ? (
+                                <span style={{ color: '#34d399', backgroundColor: '#064e3b', padding: '4px 8px', borderRadius: '4px', fontSize: '12px' }}>Onaylı</span>
+                              ) : (
+                                <span style={{ color: '#fca5a5', backgroundColor: '#451a1a', padding: '4px 8px', borderRadius: '4px', fontSize: '12px' }}>Bekliyor</span>
+                              )}
+                            </td>
+                            <td style={{ padding: '12px', color: '#38bdf8', fontWeight: 'bold' }}>{u.total_hastalar}</td>
+                            <td style={{ padding: '12px', color: '#fbbf24' }}>{u.total_receteler}</td>
+                            <td style={{ padding: '12px', color: '#34d399' }}>{u.total_raporlar}</td>
+                            <td style={{ padding: '12px', color: '#94a3b8', fontSize: '12px' }}>
+                              {new Date(u.created_at).toLocaleDateString('tr-TR')}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
             </div>
           )}
 
-          {/* REÇETE TABI */}
-          {activeTab === 'receteler' && (
-            <div>
-              {/* Reçete Ekleme Formu */}
-              <div style={cardStyle}>
-                <h3 style={{ marginTop: 0, marginBottom: '16px', color: '#38bdf8' }}>Yeni Reçete Ekle</h3>
-                <form onSubmit={handleReceteEkle} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
-                  <select value={yeniRecete.hasta_id} onChange={e => setYeniRecete({...yeniRecete, hasta_id: e.target.value})} required style={inputStyle}>
-                    <option value="">Hasta Seçin...</option>
-                    {hastalar.map(h => (
-                      <option key={h.id} value={h.id}>{h.ad} {h.soyad} ({h.tc})</option>
-                    ))}
-                  </select>
-                  <input placeholder="İlaç Adı" value={yeniRecete.ilac_adi} onChange={e => setYeniRecete({...yeniRecete, ilac_adi: e.target.value})} required style={inputStyle} />
-                  <input placeholder="Doz / Kullanım (örn: 2x1)" value={yeniRecete.doz} onChange={e => setYeniRecete({...yeniRecete, doz: e.target.value})} style={inputStyle} />
-                  <input type="date" value={yeniRecete.tarih} onChange={e => setYeniRecete({...yeniRecete, tarih: e.target.value})} required style={inputStyle} />
-                  <button type="submit" style={{ ...btnPrimaryStyle, gridColumn: '1 / -1' }}>Reçeteyi Kaydet</button>
-                </form>
-              </div>
+          {/* HASTALAR SEKMESİ */}
+          {activeTab === 'hastalar' && (
+            <>
+              {!selectedHasta ? (
+                /* HASTA LİSTESİ */
+                <div>
+                  <div style={cardStyle}>
+                    <h3 style={{ marginTop: 0, marginBottom: '16px', color: '#38bdf8' }}>➕ Yeni Hasta Klasörü Oluştur</h3>
+                    <form onSubmit={handleHastaEkle} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
+                      <input placeholder="T.C. Kimlik No" value={yeniHasta.tc} onChange={e => setYeniHasta({...yeniHasta, tc: e.target.value})} required style={inputStyle} />
+                      <input placeholder="Ad" value={yeniHasta.ad} onChange={e => setYeniHasta({...yeniHasta, ad: e.target.value})} required style={inputStyle} />
+                      <input placeholder="Soyad" value={yeniHasta.soyad} onChange={e => setYeniHasta({...yeniHasta, soyad: e.target.value})} required style={inputStyle} />
+                      <input placeholder="Telefon" value={yeniHasta.telefon} onChange={e => setYeniHasta({...yeniHasta, telefon: e.target.value})} style={inputStyle} />
+                      <button type="submit" style={{ ...btnPrimaryStyle, gridColumn: '1 / -1' }}>Klasörü Kaydet</button>
+                    </form>
+                  </div>
 
-              {/* Reçete Listesi */}
-              <div style={cardStyle}>
-                <h3 style={{ marginTop: 0, marginBottom: '16px' }}>Son Reçeteler</h3>
-                <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-                    <thead>
-                      <tr style={{ borderBottom: '1px solid #334155', color: '#94a3b8' }}>
-                        <th style={thStyle}>HASTA</th>
-                        <th style={thStyle}>İLAÇ</th>
-                        <th style={thStyle}>DOZ</th>
-                        <th style={thStyle}>TARİH</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {receteler.map(r => (
-                        <tr key={r.id} style={{ borderBottom: '1px solid #1e293b' }}>
-                          <td style={tdStyle}>{r.hastalar?.ad} {r.hastalar?.soyad}</td>
-                          <td style={tdStyle}>{r.ilac_adi}</td>
-                          <td style={tdStyle}>{r.doz || '-'}</td>
-                          <td style={tdStyle}>{r.tarih}</td>
-                        </tr>
+                  <div style={cardStyle}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                      <h3 style={{ margin: 0 }}>📁 Hasta Klasörleriniz ({filteredHastalar.length})</h3>
+                      <input placeholder="Hasta Ara (Ad, Soyad, TC)..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} style={{ ...inputStyle, width: '250px' }} />
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px' }}>
+                      {filteredHastalar.map(h => (
+                        <div 
+                          key={h.id} 
+                          onClick={() => setSelectedHasta(h)}
+                          style={{
+                            backgroundColor: '#0f172a',
+                            border: '1px solid #334155',
+                            borderRadius: '12px',
+                            padding: '16px',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '12px'
+                          }}
+                        >
+                          <span style={{ fontSize: '36px' }}>📁</span>
+                          <div>
+                            <h4 style={{ margin: '0 0 4px 0', color: '#f8fafc', fontSize: '16px' }}>{h.ad} {h.soyad}</h4>
+                            <p style={{ margin: 0, fontSize: '12px', color: '#94a3b8' }}>TC: {h.tc}</p>
+                            <p style={{ margin: 0, fontSize: '12px', color: '#38bdf8', marginTop: '4px' }}>Klasörü Aç ➔</p>
+                          </div>
+                        </div>
                       ))}
-                      {receteler.length === 0 && (
-                        <tr><td colSpan="4" style={{ ...tdStyle, textAlign: 'center', color: '#64748b' }}>Kayıtlı reçete bulunamadı.</td></tr>
+                      {filteredHastalar.length === 0 && (
+                        <p style={{ color: '#64748b', gridColumn: '1 / -1' }}>Henüz bir hasta klasörü oluşturmadınız.</p>
                       )}
-                    </tbody>
-                  </table>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </div>
+              ) : (
+                /* HASTA KLASÖR İÇERİĞİ */
+                <div>
+                  <div style={{ ...cardStyle, borderColor: '#38bdf8' }}>
+                    <button 
+                      onClick={() => setSelectedHasta(null)}
+                      style={{ backgroundColor: '#334155', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', marginBottom: '12px', fontSize: '13px' }}
+                    >
+                      ⬅️ Klasörler Listesine Dön
+                    </button>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                      <span style={{ fontSize: '48px' }}>📂</span>
+                      <div>
+                        <h2 style={{ margin: '0 0 4px 0', color: '#38bdf8' }}>{selectedHasta.ad} {selectedHasta.soyad}</h2>
+                        <p style={{ margin: 0, fontSize: '14px', color: '#94a3b8' }}><strong>T.C. Kimlik:</strong> {selectedHasta.tc} | <strong>Telefon:</strong> {selectedHasta.telefon || 'Kayıt yok'}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+                    <div>
+                      <div style={cardStyle}>
+                        <h3 style={{ marginTop: 0, color: '#f59e0b' }}>💊 Klasöre İlaç / Reçete Ekle</h3>
+                        <form onSubmit={handleReceteEkle} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                          <input placeholder="İlaç Adı" value={yeniRecete.ilac_adi} onChange={e => setYeniRecete({...yeniRecete, ilac_adi: e.target.value})} required style={inputStyle} />
+                          <input placeholder="Doz / Kullanım (Örn: 2x1 Tok)" value={yeniRecete.doz} onChange={e => setYeniRecete({...yeniRecete, doz: e.target.value})} style={inputStyle} />
+                          <input type="date" value={yeniRecete.tarih} onChange={e => setYeniRecete({...yeniRecete, tarih: e.target.value})} required style={inputStyle} />
+                          <button type="submit" style={{ ...btnPrimaryStyle, backgroundColor: '#f59e0b' }}>İlacı Kaydet</button>
+                        </form>
+                      </div>
+
+                      <div style={cardStyle}>
+                        <h4 style={{ marginTop: 0 }}>Kayıtlı İlaç Geçmişi ({hastaReceteler.length})</h4>
+                        {hastaReceteler.map(r => (
+                          <div key={r.id} style={{ backgroundColor: '#0f172a', padding: '10px', borderRadius: '8px', marginBottom: '8px', borderLeft: '4px solid #f59e0b' }}>
+                            <strong style={{ display: 'block', color: '#f8fafc' }}>{r.ilac_adi}</strong>
+                            <span style={{ fontSize: '12px', color: '#94a3b8' }}>Doz: {r.doz || '-'} | Tarih: {r.tarih}</span>
+                          </div>
+                        ))}
+                        {hastaReceteler.length === 0 && <p style={{ fontSize: '13px', color: '#64748b' }}>Henüz kayıtlı ilaç yok.</p>}
+                      </div>
+                    </div>
+
+                    <div>
+                      <div style={cardStyle}>
+                        <h3 style={{ marginTop: 0, color: '#10b981' }}>📄 Klasöre Rapor Ekle</h3>
+                        <form onSubmit={handleRaporEkle} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                          <input placeholder="Rapor Adı / Teşhis" value={yeniRapor.rapor_adi} onChange={e => setYeniRapor({...yeniRapor, rapor_adi: e.target.value})} required style={inputStyle} />
+                          <div style={{ display: 'flex', gap: '8px' }}>
+                            <input type="date" title="Başlangıç Tarihi" value={yeniRapor.baslangic_tarihi} onChange={e => setYeniRapor({...yeniRapor, baslangic_tarihi: e.target.value})} style={inputStyle} />
+                            <input type="date" title="Bitiş Tarihi" value={yeniRapor.bitis_tarihi} onChange={e => setYeniRapor({...yeniRapor, bitis_tarihi: e.target.value})} style={inputStyle} />
+                          </div>
+                          <textarea placeholder="Rapor Notları / Açıklama..." value={yeniRapor.notlar} onChange={e => setYeniRapor({...yeniRapor, notlar: e.target.value})} style={{ ...inputStyle, minHeight: '60px' }} />
+                          <button type="submit" style={{ ...btnPrimaryStyle, backgroundColor: '#10b981' }}>Raporu Kaydet</button>
+                        </form>
+                      </div>
+
+                      <div style={cardStyle}>
+                        <h4 style={{ marginTop: 0 }}>Kayıtlı Raporlar ({hastaRaporlar.length})</h4>
+                        {hastaRaporlar.map(rap => (
+                          <div key={rap.id} style={{ backgroundColor: '#0f172a', padding: '10px', borderRadius: '8px', marginBottom: '8px', borderLeft: '4px solid #10b981' }}>
+                            <strong style={{ display: 'block', color: '#f8fafc' }}>{rap.rapor_adi}</strong>
+                            <span style={{ fontSize: '12px', color: '#94a3b8', display: 'block' }}>
+                              Tarih: {rap.baslangic_tarihi || '?'} - {rap.bitis_tarihi || '?'}
+                            </span>
+                            {rap.notlar && <p style={{ fontSize: '12px', color: '#cbd5e1', margin: '4px 0 0 0' }}>Not: {rap.notlar}</p>}
+                          </div>
+                        ))}
+                        {hastaRaporlar.length === 0 && <p style={{ fontSize: '13px', color: '#64748b' }}>Henüz kayıtlı rapor yok.</p>}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
       )}
@@ -306,15 +448,10 @@ const btnPrimaryStyle = {
   backgroundColor: '#4f46e5', color: 'white', border: 'none',
   padding: '12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer'
 };
+const navBtnStyle = {
+  color: 'white', border: 'none', padding: '8px 14px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '13px'
+};
 const cardStyle = {
   backgroundColor: '#1e293b', border: '1px solid #334155',
   borderRadius: '12px', padding: '20px', marginBottom: '20px'
 };
-const tabActiveStyle = {
-  padding: '10px 20px', backgroundColor: '#4f46e5', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer'
-};
-const tabInactiveStyle = {
-  padding: '10px 20px', backgroundColor: '#1e293b', color: '#94a3b8', border: '1px solid #334155', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer'
-};
-const thStyle = { padding: '12px', fontSize: '12px' };
-const tdStyle = { padding: '12px', fontSize: '14px' };
