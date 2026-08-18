@@ -18,10 +18,8 @@ export default function Home() {
     setLoading(true);
     setMessage(null);
 
-    // Giriş Denemesi
     let { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
-    // Hesap yoksa kayıt et
     if (error && error.message.includes("Invalid login credentials")) {
       const signUpRes = await supabase.auth.signUp({ email, password });
       if (signUpRes.error) {
@@ -29,7 +27,7 @@ export default function Home() {
       } else {
         setMessage({ 
           type: 'success', 
-          text: 'Kayıt başarılı! E-posta adresinize doğrulama bağlantısı gönderildi. Lütfen mailinizi kontrol edin.' 
+          text: 'Kayıt başarılı! E-posta adresinize doğrulama bağlantısı gönderildi.' 
         });
       }
       setLoading(false);
@@ -44,106 +42,133 @@ export default function Home() {
     }
   };
 
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    setUser(null);
-    setMessage(null);
-  };
-
   return (
-    <>
-      {/* CDN üzerinden Tailwind ve Font Yükleme */}
-      <script src="https://cdn.tailwindcss.com"></script>
-      <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
-
-      <div className="min-h-screen bg-slate-900 text-slate-100 flex items-center justify-center p-4" style={{ fontFamily: 'Inter, sans-serif' }}>
+    <div style={{
+      minHeight: '100vh',
+      backgroundColor: '#0f172a',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'Center',
+      fontFamily: 'system-ui, -apple-system, sans-serif',
+      color: '#f8fafc',
+      padding: '20px'
+    }}>
+      <div style={{
+        backgroundColor: '#1e293b',
+        border: '1px solid #334155',
+        borderRadius: '16px',
+        padding: '32px',
+        width: '100%',
+        maxWidth: '400px',
+        boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5)'
+      }}>
         
-        {user ? (
-          /* Giriş Yapılmış Panel */
-          <div className="bg-slate-800 border border-slate-700 p-8 rounded-3xl shadow-2xl w-full max-w-3xl">
-            <div className="flex justify-between items-center mb-8 pb-4 border-b border-slate-700">
-              <div className="flex items-center gap-3">
-                <span className="text-3xl">💊</span>
-                <div>
-                  <h1 className="text-xl font-bold text-white">Eczane Takip Paneli</h1>
-                  <p className="text-xs text-slate-400">{user.email}</p>
-                </div>
-              </div>
-              <button
-                onClick={handleLogout}
-                className="bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 px-4 py-2 rounded-xl text-sm font-semibold transition-all"
-              >
-                Çıkış Yap
-              </button>
-            </div>
-            
-            <div className="bg-emerald-500/10 border border-emerald-500/20 p-4 rounded-2xl text-emerald-400 text-sm flex items-center gap-3">
-              <span>✅</span>
-              <div>
-                <strong>Giriş Başarılı!</strong> Hasta ve reçete yönetim modüllerin hazır.
-              </div>
-            </div>
-          </div>
-        ) : (
-          /* Giriş / Kayıt Kartı Preset */
-          <div className="bg-slate-800 border border-slate-700 p-8 rounded-3xl shadow-2xl w-full max-w-md">
-            <div className="text-center mb-8">
-              <div className="w-14 h-14 bg-indigo-600/20 border border-indigo-500/30 rounded-2xl flex items-center justify-center mx-auto mb-3 text-2xl">
-                💊
-              </div>
-              <h1 className="text-2xl font-bold text-white tracking-tight">Eczane Takip</h1>
-              <p className="text-sm text-slate-400 mt-1">Sisteme giriş yapın veya hesap oluşturun</p>
-            </div>
+        <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+          <div style={{ fontSize: '40px', marginBottom: '8px' }}>💊</div>
+          <h1 style={{ fontSize: '22px', fontWeight: 'bold', margin: '0 0 6px 0' }}>Eczane Takip</h1>
+          <p style={{ fontSize: '13px', color: '#94a3b8', margin: 0 }}>Giriş yapın veya kayıt olun</p>
+        </div>
 
-            {message && (
-              <div className={`p-4 mb-6 rounded-2xl text-sm border ${
-                message.type === 'error' 
-                  ? 'bg-red-500/10 border-red-500/20 text-red-400' 
-                  : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
-              }`}>
-                {message.text}
-              </div>
-            )}
-
-            <form onSubmit={handleAuth} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">E-Posta</label>
-                <input
-                  type="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="eczane@ornek.com"
-                  className="w-full px-4 py-3 bg-slate-900/50 border border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none text-white placeholder-slate-500 transition-all text-sm"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Şifre</label>
-                <input
-                  type="password"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="w-full px-4 py-3 bg-slate-900/50 border border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none text-white placeholder-slate-500 transition-all text-sm"
-                />
-              </div>
-
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] text-white font-semibold py-3 px-4 rounded-xl shadow-lg shadow-indigo-600/20 transition-all duration-150 text-sm mt-2 disabled:opacity-50"
-              >
-                {loading ? 'İşleniyor...' : 'Giriş Yap / Kayıt Ol'}
-              </button>
-            </form>
+        {message && (
+          <div style={{
+            padding: '12px',
+            borderRadius: '8px',
+            fontSize: '13px',
+            marginBottom: '16px',
+            backgroundColor: message.type === 'error' ? '#451a1a' : '#064e3b',
+            border: `1px solid ${message.type === 'error' ? '#7f1d1d' : '#047857'}`,
+            color: message.type === 'error' ? '#fca5a5' : '#6ee7b7'
+          }}>
+            {message.text}
           </div>
         )}
 
+        {user ? (
+          <div style={{ textAlign: 'center' }}>
+            <p style={{ color: '#4ade80', fontWeight: 'bold' }}>Giriş Başarılı!</p>
+            <p style={{ fontSize: '12px', color: '#94a3b8' }}>{user.email}</p>
+            <button 
+              onClick={() => supabase.auth.signOut().then(() => setUser(null))}
+              style={{
+                width: '100%',
+                padding: '10px',
+                marginTop: '16px',
+                backgroundColor: '#ef4444',
+                color: 'white',
+                border: 'none',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                fontWeight: 'bold'
+              }}
+            >
+              Çıkış Yap
+            </button>
+          </div>
+        ) : (
+          <form onSubmit={handleAuth}>
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{ display: 'block', fontSize: '12px', color: '#94a3b8', marginBottom: '6px' }}>E-POSTA</label>
+              <input
+                type="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="eczane@ornek.com"
+                style={{
+                  width: '100%',
+                  padding: '12px',
+                  backgroundColor: '#0f172a',
+                  border: '1px solid #334155',
+                  borderRadius: '8px',
+                  color: 'white',
+                  boxSizing: 'border-box',
+                  outline: 'none'
+                }}
+              />
+            </div>
+
+            <div style={{ marginBottom: '20px' }}>
+              <label style={{ display: 'block', fontSize: '12px', color: '#94a3b8', marginBottom: '6px' }}>ŞİFRE</label>
+              <input
+                type="password"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+                style={{
+                  width: '100%',
+                  padding: '12px',
+                  backgroundColor: '#0f172a',
+                  border: '1px solid #334155',
+                  borderRadius: '8px',
+                  color: 'white',
+                  boxSizing: 'border-box',
+                  outline: 'none'
+                }}
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading}
+              style={{
+                width: '100%',
+                padding: '12px',
+                backgroundColor: '#4f46e5',
+                color: 'white',
+                border: 'none',
+                borderRadius: '8px',
+                fontWeight: 'bold',
+                cursor: 'pointer',
+                opacity: loading ? 0.6 : 1
+              }}
+            >
+              {loading ? 'Bekleyin...' : 'Giriş Yap / Kayıt Ol'}
+            </button>
+          </form>
+        )}
+
       </div>
-    </>
-  );
-}
+    </div>
   );
 }
