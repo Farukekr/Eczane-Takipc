@@ -72,36 +72,6 @@ export default function Home() {
 
     const currentUsername = getDisplayName(sessionUser.email).toLowerCase();
 
-    // Ana admin her zaman doğrudan girer
-    if (currentUsername === 'omerfarukeker') {
-      setUser(sessionUser);
-      return;
-    }
-
-    // Giriş yapan kullanıcının onay durumunu çek
-    const { data, error } = await supabase
-      .from('user_approvals')
-      .select('is_approved')
-      .eq('user_id', sessionUser.id)
-      .single();
-
-    if (error) {
-      console.error('Approval check error:', error);
-    }
-
-    // Veritabanında is_approved açıkça TRUE ise içeri al
-    if (data && data.is_approved === true) {
-      setUser(sessionUser);
-    } else {
-      // Onaysızsa çıkış yaptır
-      await supabase.auth.signOut();
-      setUser(null);
-      showToast('Hesabınız yönetici (Ömer Faruk EKER) onayı bekliyor.', 'error');
-    }
-  }, []); // useCallback burada bitmeli
-
-    const currentUsername = getDisplayName(sessionUser.email).toLowerCase();
-
     if (currentUsername === 'omerfarukeker') {
       setUser(sessionUser);
       return;
@@ -113,7 +83,11 @@ export default function Home() {
       .eq('user_id', sessionUser.id)
       .maybeSingle();
 
-    if (!error && data && data.is_approved) {
+    if (error) {
+      console.error('Approval check error:', error.message);
+    }
+
+    if (data && data.is_approved === true) {
       setUser(sessionUser);
     } else {
       await supabase.auth.signOut();
@@ -344,11 +318,11 @@ export default function Home() {
             <form onSubmit={handleAuth}>
               <div style={{ marginBottom: '20px' }}>
                 <label style={labelStyle}>KULLANICI ADI</label>
-                <input type="text" required value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Kullanıcı Adınız" style={inputStyle} />
+                <input type="text" required value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Kullanıcı Adınız" style={modernInputStyle} />
               </div>
               <div style={{ marginBottom: '24px' }}>
                 <label style={labelStyle}>PAROLA</label>
-                <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" style={inputStyle} />
+                <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" style={modernInputStyle} />
               </div>
               <button type="submit" disabled={loading} style={btnPrimaryStyle}>
                 {loading ? 'İşlem Yapılıyor...' : 'Giriş Yap / Kayıt Ol ➔'}
@@ -466,19 +440,19 @@ export default function Home() {
                     <form onSubmit={handleHastaEkle} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px' }}>
                       <div>
                         <label style={labelStyle}>T.C. KİMLİK NO</label>
-                        <input placeholder="11 haneli T.C." maxLength={11} value={yeniHasta.tc} onChange={e => setYeniHasta({...yeniHasta, tc: e.target.value})} required style={inputStyle} />
+                        <input placeholder="11 haneli T.C." maxLength={11} value={yeniHasta.tc} onChange={e => setYeniHasta({...yeniHasta, tc: e.target.value})} required style={modernInputStyle} />
                       </div>
                       <div>
                         <label style={labelStyle}>AD</label>
-                        <input placeholder="Hasta Adı" value={yeniHasta.ad} onChange={e => setYeniHasta({...yeniHasta, ad: e.target.value})} required style={inputStyle} />
+                        <input placeholder="Hasta Adı" value={yeniHasta.ad} onChange={e => setYeniHasta({...yeniHasta, ad: e.target.value})} required style={modernInputStyle} />
                       </div>
                       <div>
                         <label style={labelStyle}>SOYAD</label>
-                        <input placeholder="Hasta Soyadı" value={yeniHasta.soyad} onChange={e => setYeniHasta({...yeniHasta, soyad: e.target.value})} required style={inputStyle} />
+                        <input placeholder="Hasta Soyadı" value={yeniHasta.soyad} onChange={e => setYeniHasta({...yeniHasta, soyad: e.target.value})} required style={modernInputStyle} />
                       </div>
                       <div>
                         <label style={labelStyle}>TELEFON</label>
-                        <input placeholder="05xx xxx xx xx" value={yeniHasta.telefon} onChange={e => setYeniHasta({...yeniHasta, telefon: e.target.value})} style={inputStyle} />
+                        <input placeholder="05xx xxx xx xx" value={yeniHasta.telefon} onChange={e => setYeniHasta({...yeniHasta, telefon: e.target.value})} style={modernInputStyle} />
                       </div>
                       <div style={{ gridColumn: '1 / -1', marginTop: '6px' }}>
                         <button type="submit" style={btnPrimaryStyle}>📁 Klasörü Kaydet ve Oluştur</button>
@@ -489,7 +463,7 @@ export default function Home() {
                   <div style={cardStyle}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
                       <h3 style={{ margin: 0, fontSize: '18px', color: '#ffffff' }}>📁 Kayıtlı Hasta Klasörleri ({filteredHastalar.length})</h3>
-                      <input placeholder="🔍 Hasta Ara..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} style={{ ...inputStyle, width: '280px' }} />
+                      <input placeholder="🔍 Hasta Ara..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} style={{ ...modernInputStyle, width: '280px' }} />
                     </div>
 
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '16px' }}>
@@ -502,7 +476,7 @@ export default function Home() {
                               <p style={{ margin: 0, fontSize: '13px', color: '#9ca3af' }}>TC: {h.tc}</p>
                             </div>
                           </div>
-                          <button onClick={() => setConfirmModal({ id: h.id, title: `${h.ad} ${h.soyad}`, type: 'hasta' })} style={deleteBtnStyle}>🗑️</button>
+                          <button onClick={() => setConfirmModal({ id: h.id, title: `${h.ad} ${h.soyad}`, type: 'hasta' })} style={compactDeleteBtn}>🗑️</button>
                         </div>
                       ))}
                     </div>
@@ -510,61 +484,95 @@ export default function Home() {
                 </div>
               ) : (
                 <div>
-                  <div style={{ ...cardStyle, borderLeft: '6px solid #10b981' }}>
-                    <button onClick={() => setSelectedHasta(null)} style={{ backgroundColor: '#1f2937', color: '#38bdf8', border: '1px solid #374151', padding: '8px 16px', borderRadius: '10px', cursor: 'pointer', marginBottom: '16px', fontSize: '13px' }}>⬅️ Klasörlere Dön</button>
-                    <h2>{selectedHasta.ad} {selectedHasta.soyad}</h2>
-                    <p>TC: {selectedHasta.tc} | Tel: {selectedHasta.telefon || '-'}</p>
+                  <div style={{ backgroundColor: '#0f172a', border: '1px solid #1e293b', borderRadius: '16px', padding: '20px 24px', marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                      <button onClick={() => setSelectedHasta(null)} style={{ backgroundColor: '#1e293b', color: '#38bdf8', border: '1px solid #334155', padding: '10px 16px', borderRadius: '10px', cursor: 'pointer', fontWeight: '600', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        ⬅️ Klasörlere Dön
+                      </button>
+                      <div>
+                        <h2 style={{ margin: 0, color: '#f8fafc', fontSize: '22px', fontWeight: '800' }}>{selectedHasta.ad} {selectedHasta.soyad}</h2>
+                        <div style={{ display: 'flex', gap: '12px', marginTop: '6px' }}>
+                          <span style={{ fontSize: '12px', color: '#94a3b8', backgroundColor: '#1e293b', padding: '3px 10px', borderRadius: '6px' }}>🆔 T.C.: <strong style={{ color: '#cbd5e1' }}>{selectedHasta.tc}</strong></span>
+                          <span style={{ fontSize: '12px', color: '#94a3b8', backgroundColor: '#1e293b', padding: '3px 10px', borderRadius: '6px' }}>📞 Tel: <strong style={{ color: '#cbd5e1' }}>{selectedHasta.telefon || 'Girilmemiş'}</strong></span>
+                        </div>
+                      </div>
+                    </div>
                   </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '24px' }}>
-                    <div>
-                      <div style={cardStyle}>
-                        <h3 style={{ color: '#f59e0b' }}>💊 İlaç Ekle</h3>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '20px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                      <div style={{ backgroundColor: '#0f172a', border: '1px solid #1e293b', borderRadius: '16px', padding: '20px' }}>
+                        <h3 style={{ margin: '0 0 16px 0', color: '#fbbf24', fontSize: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>💊 Yeni İlaç Ekle</h3>
                         <form onSubmit={handleReceteEkle} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                          <input placeholder="İlaç Adı" value={yeniRecete.ilac_adi} onChange={e => setYeniRecete({...yeniRecete, ilac_adi: e.target.value})} required style={inputStyle} />
-                          <input placeholder="Doz" value={yeniRecete.doz} onChange={e => setYeniRecete({...yeniRecete, doz: e.target.value})} style={inputStyle} />
-                          <input type="date" value={yeniRecete.tarih} onChange={e => setYeniRecete({...yeniRecete, tarih: e.target.value})} required style={inputStyle} />
-                          <button type="submit" style={{ ...btnPrimaryStyle, backgroundColor: '#d97706' }}>Ekle</button>
+                          <input placeholder="İlaç Adı (ör. Parol)" value={yeniRecete.ilac_adi} onChange={e => setYeniRecete({...yeniRecete, ilac_adi: e.target.value})} required style={modernInputStyle} />
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                            <input placeholder="Doz (ör. 1*2)" value={yeniRecete.doz} onChange={e => setYeniRecete({...yeniRecete, doz: e.target.value})} style={modernInputStyle} />
+                            <input type="date" value={yeniRecete.tarih} onChange={e => setYeniRecete({...yeniRecete, tarih: e.target.value})} required style={modernInputStyle} />
+                          </div>
+                          <button type="submit" style={{ ...modernBtnStyle, backgroundColor: '#d97706', color: '#ffffff' }}>+ İlaç Kaydet</button>
                         </form>
                       </div>
-                      <div style={cardStyle}>
-                        <h4>İlaç Geçmişi</h4>
-                        {hastaReceteler.map(r => (
-                          <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px', backgroundColor: '#090d16', marginBottom: '8px', borderRadius: '8px' }}>
-                            <div>
-                              <strong>{r.ilac_adi}</strong> - {r.doz} ({formatTarih(r.tarih)})
-                            </div>
-                            <button onClick={() => setConfirmModal({ id: r.id, title: r.ilac_adi, type: 'recete' })} style={deleteBtnStyle}>🗑️</button>
+
+                      <div style={{ backgroundColor: '#0f172a', border: '1px solid #1e293b', borderRadius: '16px', padding: '20px' }}>
+                        <h4 style={{ margin: '0 0 14px 0', color: '#94a3b8', fontSize: '14px' }}>📋 İlaç Geçmişi ({hastaReceteler.length})</h4>
+                        {hastaReceteler.length === 0 ? (
+                          <p style={{ color: '#64748b', fontSize: '13px', margin: 0, fontStyle: 'italic' }}>Henüz ilaç kaydı yok.</p>
+                        ) : (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            {hastaReceteler.map(r => (
+                              <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 14px', backgroundColor: '#1e293b', borderRadius: '10px', border: '1px solid #334155' }}>
+                                <div>
+                                  <strong style={{ color: '#f8fafc', fontSize: '14px' }}>{r.ilac_adi}</strong>
+                                  <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '2px' }}>Doz: <span style={{ color: '#fbbf24' }}>{r.doz || '-'}</span> | Tarih: {formatTarih(r.tarih)}</div>
+                                </div>
+                                <button onClick={() => setConfirmModal({ id: r.id, title: r.ilac_adi, type: 'recete' })} style={compactDeleteBtn}>🗑️</button>
+                              </div>
+                            ))}
                           </div>
-                        ))}
+                        )}
                       </div>
                     </div>
 
-                    <div>
-                      <div style={cardStyle}>
-                        <h3 style={{ color: '#10b981' }}>📄 Rapor Ekle</h3>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                      <div style={{ backgroundColor: '#0f172a', border: '1px solid #1e293b', borderRadius: '16px', padding: '20px' }}>
+                        <h3 style={{ margin: '0 0 16px 0', color: '#34d399', fontSize: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>📄 Yeni Rapor Ekle</h3>
                         <form onSubmit={handleRaporEkle} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                          <input placeholder="Rapor Adı" value={yeniRapor.rapor_adi} onChange={e => setYeniRapor({...yeniRapor, rapor_adi: e.target.value})} required style={inputStyle} />
-                          <input type="date" value={yeniRapor.baslangic_tarihi} onChange={e => setYeniRapor({...yeniRapor, baslangic_tarihi: e.target.value})} style={inputStyle} />
-                          <input type="date" value={yeniRapor.bitis_tarihi} onChange={e => setYeniRapor({...yeniRapor, bitis_tarihi: e.target.value})} style={inputStyle} />
-                          <textarea placeholder="Notlar" value={yeniRapor.notlar} onChange={e => setYeniRapor({...yeniRapor, notlar: e.target.value})} style={{ ...inputStyle, minHeight: '60px' }} />
-                          <button type="submit" style={{ ...btnPrimaryStyle, backgroundColor: '#059669' }}>Ekle</button>
+                          <input placeholder="Rapor Adı veya Teşhis" value={yeniRapor.rapor_adi} onChange={e => setYeniRapor({...yeniRapor, rapor_adi: e.target.value})} required style={modernInputStyle} />
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                            <div>
+                              <label style={{ fontSize: '10px', color: '#64748b', display: 'block', marginBottom: '2px' }}>BAŞLANGIÇ</label>
+                              <input type="date" value={yeniRapor.baslangic_tarihi} onChange={e => setYeniRapor({...yeniRapor, baslangic_tarihi: e.target.value})} style={modernInputStyle} />
+                            </div>
+                            <div>
+                              <label style={{ fontSize: '10px', color: '#64748b', display: 'block', marginBottom: '2px' }}>BİTİŞ</label>
+                              <input type="date" value={yeniRapor.bitis_tarihi} onChange={e => setYeniRapor({...yeniRapor, bitis_tarihi: e.target.value})} style={modernInputStyle} />
+                            </div>
+                          </div>
+                          <textarea placeholder="Notlar / Kullanım Talimatları..." value={yeniRapor.notlar} onChange={e => setYeniRapor({...yeniRapor, notlar: e.target.value})} style={{ ...modernInputStyle, minHeight: '50px', resize: 'vertical' }} />
+                          <button type="submit" style={{ ...modernBtnStyle, backgroundColor: '#059669', color: '#ffffff' }}>+ Rapor Kaydet</button>
                         </form>
                       </div>
-                      <div style={cardStyle}>
-                        <h4>Raporlar</h4>
-                        {hastaRaporlar.map(rap => (
-                          <div key={rap.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px', backgroundColor: '#090d16', marginBottom: '8px', borderRadius: '8px' }}>
-                            <div>
-                              <strong>{rap.rapor_adi}</strong>
-                              <div style={{ fontSize: '12px', color: '#9ca3af' }}>{formatTarih(rap.baslangic_tarihi)} / {formatTarih(rap.bitis_tarihi)}</div>
-                            </div>
-                            <button onClick={() => setConfirmModal({ id: rap.id, title: rap.rapor_adi, type: 'rapor' })} style={deleteBtnStyle}>🗑️</button>
+
+                      <div style={{ backgroundColor: '#0f172a', border: '1px solid #1e293b', borderRadius: '16px', padding: '20px' }}>
+                        <h4 style={{ margin: '0 0 14px 0', color: '#94a3b8', fontSize: '14px' }}>📂 Kayıtlı Raporlar ({hastaRaporlar.length})</h4>
+                        {hastaRaporlar.length === 0 ? (
+                          <p style={{ color: '#64748b', fontSize: '13px', margin: 0, fontStyle: 'italic' }}>Henüz rapor kaydı yok.</p>
+                        ) : (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            {hastaRaporlar.map(rap => (
+                              <div key={rap.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 14px', backgroundColor: '#1e293b', borderRadius: '10px', border: '1px solid #334155' }}>
+                                <div>
+                                  <strong style={{ color: '#f8fafc', fontSize: '14px' }}>{rap.rapor_adi}</strong>
+                                  <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '2px' }}>📅 {formatTarih(rap.baslangic_tarihi)} ➔ {formatTarih(rap.bitis_tarihi)}</div>
+                                  {rap.notlar && <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>📝 {rap.notlar}</div>}
+                                </div>
+                                <button onClick={() => setConfirmModal({ id: rap.id, title: rap.rapor_adi, type: 'rapor' })} style={compactDeleteBtn}>🗑️</button>
+                              </div>
+                            ))}
                           </div>
-                        ))}
+                        )}
                       </div>
                     </div>
-
                   </div>
                 </div>
               )}
@@ -576,9 +584,10 @@ export default function Home() {
   );
 }
 
-const inputStyle = { width: '100%', padding: '12px', backgroundColor: '#090d16', border: '1px solid #1f2937', borderRadius: '10px', color: '#ffffff', outline: 'none', fontSize: '14px', boxSizing: 'border-box' };
+const modernInputStyle = { width: '100%', padding: '10px 14px', backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '8px', color: '#f8fafc', outline: 'none', fontSize: '13px', boxSizing: 'border-box' };
 const labelStyle = { display: 'block', fontSize: '11px', fontWeight: '700', color: '#9ca3af', marginBottom: '6px' };
 const btnPrimaryStyle = { width: '100%', backgroundColor: '#059669', color: '#ffffff', border: 'none', padding: '12px', borderRadius: '10px', fontWeight: '700', cursor: 'pointer' };
+const modernBtnStyle = { width: '100%', border: 'none', padding: '10px', borderRadius: '8px', fontWeight: '700', fontSize: '13px', cursor: 'pointer', marginTop: '4px' };
 const navBtnStyle = { border: 'none', padding: '10px 16px', borderRadius: '10px', cursor: 'pointer', fontWeight: '700', fontSize: '13px' };
 const cardStyle = { backgroundColor: '#111827', border: '1px solid #1f2937', borderRadius: '20px', padding: '24px', marginBottom: '24px' };
-const deleteBtnStyle = { backgroundColor: '#374151', color: '#ffffff', border: 'none', width: '32px', height: '32px', borderRadius: '8px', cursor: 'pointer' };
+const compactDeleteBtn = { backgroundColor: '#334155', color: '#ef4444', border: 'none', width: '30px', height: '30px', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px' };
