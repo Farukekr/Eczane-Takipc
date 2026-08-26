@@ -6,7 +6,7 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-const ADMIN_EMAIL = 'omerfarukeker23@gmail.com'; 
+const ADMIN_EMAIL = 'omerfarukeker23@gmail.com';
 
 export default function Home() {
   const [email, setEmail] = useState('');
@@ -32,7 +32,17 @@ export default function Home() {
   const [adminUsers, setAdminUsers] = useState([]);
   const [adminLoading, setAdminLoading] = useState(false);
 
-  // Şık Site İçi Bildirim Gösterme Fonksiyonu
+  // Tarihleri Düzgün Formatlama (YYYY-MM-DD -> DD.MM.YYYY)
+  const formatTarih = (tarihStr) => {
+    if (!tarihStr) return '-';
+    const parts = tarihStr.split('-');
+    if (parts.length === 3) {
+      return `${parts[2]}.${parts[1]}.${parts[0]}`;
+    }
+    return tarihStr;
+  };
+
+  // Site İçi Şık Toast Bildirim Fonksiyonu
   const showToast = (message, type = 'success') => {
     setToast({ message, type });
     setTimeout(() => {
@@ -124,6 +134,7 @@ export default function Home() {
     setLoading(false);
   };
 
+  // --- HASTA EKLE VE SİL ---
   const handleHastaEkle = async (e) => {
     e.preventDefault();
     const { error } = await supabase.from('hastalar').insert([{
@@ -140,6 +151,26 @@ export default function Home() {
     }
   };
 
+  const handleHastaSil = async (hastaId, hastaAd) => {
+    if (!window.confirm(`${hastaAd} isimli hastayı ve ait tüm reçete/raporları silmek istediğinize emin misiniz?`)) return;
+
+    // Önce reçete ve raporları sil
+    await supabase.from('receteler').delete().eq('hasta_id', hastaId);
+    await supabase.from('raporlar').delete().eq('hasta_id', hastaId);
+    
+    // Sonra hastayı sil
+    const { error } = await supabase.from('hastalar').delete().eq('id', hastaId);
+
+    if (error) {
+      showToast('Hasta silinirken hata oluştu: ' + error.message, 'error');
+    } else {
+      showToast('Hasta klasörü ve verileri silindi 🗑️', 'success');
+      if (selectedHasta?.id === hastaId) setSelectedHasta(null);
+      fetchHastalar();
+    }
+  };
+
+  // --- REÇETE EKLE VE SİL ---
   const handleReceteEkle = async (e) => {
     e.preventDefault();
     const { error } = await supabase.from('receteler').insert([{
@@ -157,6 +188,17 @@ export default function Home() {
     }
   };
 
+  const handleReceteSil = async (receteId) => {
+    const { error } = await supabase.from('receteler').delete().eq('id', receteId);
+    if (error) {
+      showToast('İlaç silinemedi: ' + error.message, 'error');
+    } else {
+      showToast('İlaç silindi 🗑️', 'success');
+      fetchHastaDetaylari(selectedHasta.id);
+    }
+  };
+
+  // --- RAPOR EKLE VE SİL ---
   const handleRaporEkle = async (e) => {
     e.preventDefault();
     const { error } = await supabase.from('raporlar').insert([{
@@ -174,6 +216,16 @@ export default function Home() {
     }
   };
 
+  const handleRaporSil = async (raporId) => {
+    const { error } = await supabase.from('raporlar').delete().eq('id', raporId);
+    if (error) {
+      showToast('Rapor silinemedi: ' + error.message, 'error');
+    } else {
+      showToast('Rapor silindi 🗑️', 'success');
+      fetchHastaDetaylari(selectedHasta.id);
+    }
+  };
+
   const filteredHastalar = hastalar.filter(h => 
     h.ad?.toLowerCase().includes(searchTerm.toLowerCase()) || 
     h.soyad?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -183,70 +235,77 @@ export default function Home() {
   const isAdmin = user?.email === ADMIN_EMAIL;
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#0f172a', fontFamily: 'system-ui, -apple-system, sans-serif', color: '#f8fafc', padding: '20px' }}>
+    <div style={{ minHeight: '100vh', backgroundColor: '#090d16', fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', color: '#f1f5f9', padding: '24px 16px' }}>
       
-      {/* ŞIK SİTE İÇİ BİLDİRİM (TOAST) */}
+      {/* SİTE İÇİ ŞİK BİLDİRİM (TOAST) */}
       {toast && (
         <div style={{
           position: 'fixed',
-          top: '20px',
-          right: '20px',
-          backgroundColor: toast.type === 'error' ? '#ef4444' : '#10b981',
-          color: 'white',
-          padding: '12px 20px',
-          borderRadius: '10px',
-          boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.3)',
+          top: '24px',
+          right: '24px',
+          backgroundColor: toast.type === 'error' ? '#dc2626' : '#059669',
+          color: '#ffffff',
+          padding: '14px 22px',
+          borderRadius: '12px',
+          boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5)',
           zIndex: 9999,
-          fontWeight: 'bold',
+          fontWeight: '600',
+          fontSize: '14px',
           display: 'flex',
           alignItems: 'center',
-          gap: '8px',
-          animation: 'fadeIn 0.3s'
+          gap: '10px',
+          border: '1px solid rgba(255, 255, 255, 0.15)',
+          backdropFilter: 'blur(8px)'
         }}>
-          <span>{toast.type === 'error' ? '⚠️' : '✅'}</span>
+          <span style={{ fontSize: '18px' }}>{toast.type === 'error' ? '⚠️' : '✅'}</span>
           <span>{toast.message}</span>
         </div>
       )}
 
       {!user ? (
         /* GİRİŞ EKRANI */
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '80vh' }}>
-          <div style={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '16px', padding: '32px', width: '100%', maxWidth: '400px' }}>
-            <div style={{ textAlign: 'center', marginBottom: '24px' }}>
-              <div style={{ fontSize: '40px', marginBottom: '8px' }}>💊</div>
-              <h1 style={{ fontSize: '22px', fontWeight: 'bold' }}>Eczane Takip</h1>
-              <p style={{ fontSize: '13px', color: '#94a3b8' }}>Giriş yapın veya kayıt olun</p>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '85vh' }}>
+          <div style={{ backgroundColor: '#111827', border: '1px solid #1f2937', borderRadius: '24px', padding: '40px 32px', width: '100%', maxWidth: '420px', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.7)' }}>
+            <div style={{ textAlign: 'center', marginBottom: '32px' }}>
+              <div style={{ fontSize: '48px', marginBottom: '12px', filter: 'drop-shadow(0 4px 8px rgba(16, 185, 129, 0.3))' }}>💊</div>
+              <h1 style={{ fontSize: '26px', fontWeight: '800', color: '#ffffff', margin: '0 0 6px 0', letterSpacing: '-0.5px' }}>Eczane Takip</h1>
+              <p style={{ fontSize: '14px', color: '#9ca3af', margin: 0 }}>Profesyonel Hasta & Reçete Portalı</p>
             </div>
             <form onSubmit={handleAuth}>
-              <div style={{ marginBottom: '16px' }}>
-                <label style={{ display: 'block', fontSize: '12px', color: '#94a3b8', marginBottom: '6px' }}>E-POSTA</label>
+              <div style={{ marginBottom: '20px' }}>
+                <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: '#9ca3af', marginBottom: '8px', letterSpacing: '0.5px' }}>E-POSTA ADRESİ</label>
                 <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="eczane@ornek.com" style={inputStyle} />
               </div>
-              <div style={{ marginBottom: '20px' }}>
-                <label style={{ display: 'block', fontSize: '12px', color: '#94a3b8', marginBottom: '6px' }}>ŞİFRE</label>
+              <div style={{ marginBottom: '24px' }}>
+                <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: '#9ca3af', marginBottom: '8px', letterSpacing: '0.5px' }}>PAROLA</label>
                 <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" style={inputStyle} />
               </div>
-              <button type="submit" disabled={loading} style={btnPrimaryStyle}>{loading ? 'Bekleyin...' : 'Giriş Yap / Kayıt Ol'}</button>
+              <button type="submit" disabled={loading} style={btnPrimaryStyle}>
+                {loading ? 'İşlem Yapılıyor...' : 'Giriş Yap / Kayıt Ol ➔'}
+              </button>
             </form>
           </div>
         </div>
       ) : (
         /* ANA PANEL */
-        <div style={{ maxWidth: '1100px', margin: '0 auto' }}>
-          {/* Header */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', paddingBottom: '16px', borderBottom: '1px solid #334155' }}>
+        <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
+          
+          {/* ÜST BAR (HEADER) */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px', padding: '20px 24px', backgroundColor: '#111827', border: '1px solid #1f2937', borderRadius: '20px', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.4)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-              <span style={{ fontSize: '32px' }}>📂</span>
+              <div style={{ backgroundColor: '#064e3b', width: '48px', height: '48px', borderRadius: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px' }}>📂</div>
               <div>
-                <h1 style={{ fontSize: '20px', fontWeight: 'bold', margin: 0 }}>Eczane Takip Sistemi</h1>
-                <p style={{ fontSize: '12px', color: '#38bdf8', margin: 0 }}>{user.email} {isAdmin && '👑 (Yönetici)'}</p>
+                <h1 style={{ fontSize: '20px', fontWeight: '800', margin: 0, color: '#ffffff' }}>Eczane Takip Sistemi</h1>
+                <p style={{ fontSize: '13px', color: '#10b981', margin: '2px 0 0 0', fontWeight: '500' }}>
+                  {user.email} {isAdmin && <span style={{ backgroundColor: '#991b1b', color: '#fecaca', padding: '2px 8px', borderRadius: '6px', fontSize: '11px', marginLeft: '6px' }}>👑 Admin</span>}
+                </p>
               </div>
             </div>
 
             <div style={{ display: 'flex', gap: '10px' }}>
               <button 
                 onClick={() => { setActiveTab('hastalar'); setSelectedHasta(null); }}
-                style={{ ...navBtnStyle, backgroundColor: activeTab === 'hastalar' ? '#3b82f6' : '#334155' }}
+                style={{ ...navBtnStyle, backgroundColor: activeTab === 'hastalar' ? '#10b981' : '#1f2937', color: activeTab === 'hastalar' ? '#ffffff' : '#9ca3af' }}
               >
                 📁 Hastalarım
               </button>
@@ -254,64 +313,65 @@ export default function Home() {
               {isAdmin && (
                 <button 
                   onClick={() => setActiveTab('admin')}
-                  style={{ ...navBtnStyle, backgroundColor: activeTab === 'admin' ? '#ef4444' : '#334155' }}
+                  style={{ ...navBtnStyle, backgroundColor: activeTab === 'admin' ? '#dc2626' : '#1f2937', color: activeTab === 'admin' ? '#ffffff' : '#9ca3af' }}
                 >
                   👑 Admin Paneli
                 </button>
               )}
 
-              <button onClick={() => { setSelectedHasta(null); supabase.auth.signOut(); showToast('Çıkış yapıldı', 'success'); }} style={{ ...navBtnStyle, backgroundColor: '#64748b' }}>Çıkış</button>
+              <button onClick={() => { setSelectedHasta(null); supabase.auth.signOut(); showToast('Çıkış yapıldı', 'success'); }} style={{ ...navBtnStyle, backgroundColor: '#374151', color: '#d1d5db' }}>Çıkış</button>
             </div>
           </div>
 
           {/* ADMIN PANELI */}
           {activeTab === 'admin' && isAdmin && (
-            <div>
-              <div style={cardStyle}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                  <h2 style={{ margin: 0, color: '#f87171' }}>👑 Sistemdeki Eczacılar ve Kullanıcılar</h2>
-                  <button onClick={fetchAdminStats} style={{ ...navBtnStyle, backgroundColor: '#1e293b', border: '1px solid #475569' }}>🔄 Yenile</button>
+            <div style={cardStyle}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+                <div>
+                  <h2 style={{ margin: 0, color: '#ef4444', fontSize: '20px', fontWeight: '700' }}>👑 Sistemdeki Eczacılar ve Kullanıcılar</h2>
+                  <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: '#9ca3af' }}>Kayıtlı kullanıcılar ve toplam oluşturdukları veri istatistikleri</p>
                 </div>
-                
-                {adminLoading ? (
-                  <p style={{ color: '#94a3b8' }}>Kullanıcı verileri yükleniyor...</p>
-                ) : (
-                  <div style={{ overflowX: 'auto' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '14px' }}>
-                      <thead>
-                        <tr style={{ borderBottom: '1px solid #334155', color: '#94a3b8' }}>
-                          <th style={{ padding: '12px' }}>E-Posta</th>
-                          <th style={{ padding: '12px' }}>Doğrulama</th>
-                          <th style={{ padding: '12px' }}>Hasta Sayısı</th>
-                          <th style={{ padding: '12px' }}>Reçete</th>
-                          <th style={{ padding: '12px' }}>Rapor</th>
-                          <th style={{ padding: '12px' }}>Kayıt Tarihi</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {adminUsers.map(u => (
-                          <tr key={u.user_id} style={{ borderBottom: '1px solid #1e293b' }}>
-                            <td style={{ padding: '12px', fontWeight: 'bold' }}>{u.email}</td>
-                            <td style={{ padding: '12px' }}>
-                              {u.email_confirmed_at ? (
-                                <span style={{ color: '#34d399', backgroundColor: '#064e3b', padding: '4px 8px', borderRadius: '4px', fontSize: '12px' }}>Onaylı</span>
-                              ) : (
-                                <span style={{ color: '#fca5a5', backgroundColor: '#451a1a', padding: '4px 8px', borderRadius: '4px', fontSize: '12px' }}>Bekliyor</span>
-                              )}
-                            </td>
-                            <td style={{ padding: '12px', color: '#38bdf8', fontWeight: 'bold' }}>{u.total_hastalar}</td>
-                            <td style={{ padding: '12px', color: '#fbbf24' }}>{u.total_receteler}</td>
-                            <td style={{ padding: '12px', color: '#34d399' }}>{u.total_raporlar}</td>
-                            <td style={{ padding: '12px', color: '#94a3b8', fontSize: '12px' }}>
-                              {new Date(u.created_at).toLocaleDateString('tr-TR')}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
+                <button onClick={fetchAdminStats} style={{ ...navBtnStyle, backgroundColor: '#1f2937', border: '1px solid #374151' }}>🔄 Verileri Yenile</button>
               </div>
+              
+              {adminLoading ? (
+                <p style={{ color: '#9ca3af', padding: '20px 0', textAlign: 'center' }}>İstatistikler yükleniyor...</p>
+              ) : (
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '14px' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '2px solid #1f2937', color: '#9ca3af' }}>
+                        <th style={{ padding: '14px' }}>E-Posta</th>
+                        <th style={{ padding: '14px' }}>E-posta Onayı</th>
+                        <th style={{ padding: '14px', textAlign: 'center' }}>Hasta Sayısı</th>
+                        <th style={{ padding: '14px', textAlign: 'center' }}>Reçete</th>
+                        <th style={{ padding: '14px', textAlign: 'center' }}>Rapor</th>
+                        <th style={{ padding: '14px' }}>Kayıt Tarihi</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {adminUsers.map(u => (
+                        <tr key={u.user_id} style={{ borderBottom: '1px solid #1f2937' }}>
+                          <td style={{ padding: '14px', fontWeight: '600', color: '#f3f4f6' }}>{u.email}</td>
+                          <td style={{ padding: '14px' }}>
+                            {u.email_confirmed_at ? (
+                              <span style={{ color: '#34d399', backgroundColor: '#064e3b', padding: '4px 10px', borderRadius: '6px', fontSize: '12px', fontWeight: '600' }}>Verified</span>
+                            ) : (
+                              <span style={{ color: '#fca5a5', backgroundColor: '#451a1a', padding: '4px 10px', borderRadius: '6px', fontSize: '12px', fontWeight: '600' }}>Onay Bekliyor</span>
+                            )}
+                          </td>
+                          <td style={{ padding: '14px', color: '#38bdf8', fontWeight: 'bold', textAlign: 'center' }}>{u.total_hastalar}</td>
+                          <td style={{ padding: '14px', color: '#fbbf24', fontWeight: 'bold', textAlign: 'center' }}>{u.total_receteler}</td>
+                          <td style={{ padding: '14px', color: '#34d399', fontWeight: 'bold', textAlign: 'center' }}>{u.total_raporlar}</td>
+                          <td style={{ padding: '14px', color: '#9ca3af', fontSize: '13px' }}>
+                            {formatTarih(u.created_at?.split('T')[0])}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           )}
 
@@ -320,124 +380,214 @@ export default function Home() {
             <>
               {!selectedHasta ? (
                 <div>
+                  {/* HASTA EKLE KARTI */}
                   <div style={cardStyle}>
-                    <h3 style={{ marginTop: 0, marginBottom: '16px', color: '#38bdf8' }}>➕ Yeni Hasta Klasörü Oluştur</h3>
-                    <form onSubmit={handleHastaEkle} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
-                      <input placeholder="T.C. Kimlik No" value={yeniHasta.tc} onChange={e => setYeniHasta({...yeniHasta, tc: e.target.value})} required style={inputStyle} />
-                      <input placeholder="Ad" value={yeniHasta.ad} onChange={e => setYeniHasta({...yeniHasta, ad: e.target.value})} required style={inputStyle} />
-                      <input placeholder="Soyad" value={yeniHasta.soyad} onChange={e => setYeniHasta({...yeniHasta, soyad: e.target.value})} required style={inputStyle} />
-                      <input placeholder="Telefon" value={yeniHasta.telefon} onChange={e => setYeniHasta({...yeniHasta, telefon: e.target.value})} style={inputStyle} />
-                      <button type="submit" style={{ ...btnPrimaryStyle, gridColumn: '1 / -1' }}>Klasörü Kaydet</button>
+                    <h3 style={{ marginTop: 0, marginBottom: '20px', color: '#10b981', fontSize: '18px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span>➕</span> Yeni Hasta Klasörü Oluştur
+                    </h3>
+                    <form onSubmit={handleHastaEkle} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px' }}>
+                      <div>
+                        <label style={labelStyle}>T.C. KİMLİK NO</label>
+                        <input placeholder="11 haneli T.C." maxLength={11} value={yeniHasta.tc} onChange={e => setYeniHasta({...yeniHasta, tc: e.target.value})} required style={inputStyle} />
+                      </div>
+                      <div>
+                        <label style={labelStyle}>AD</label>
+                        <input placeholder="Hasta Adı" value={yeniHasta.ad} onChange={e => setYeniHasta({...yeniHasta, ad: e.target.value})} required style={inputStyle} />
+                      </div>
+                      <div>
+                        <label style={labelStyle}>SOYAD</label>
+                        <input placeholder="Hasta Soyadı" value={yeniHasta.soyad} onChange={e => setYeniHasta({...yeniHasta, soyad: e.target.value})} required style={inputStyle} />
+                      </div>
+                      <div>
+                        <label style={labelStyle}>TELEFON (OPSİYONEL)</label>
+                        <input placeholder="05xx xxx xx xx" value={yeniHasta.telefon} onChange={e => setYeniHasta({...yeniHasta, telefon: e.target.value})} style={inputStyle} />
+                      </div>
+                      <div style={{ gridColumn: '1 / -1', marginTop: '6px' }}>
+                        <button type="submit" style={btnPrimaryStyle}>📁 Klasörü Kaydet ve Oluştur</button>
+                      </div>
                     </form>
                   </div>
 
+                  {/* HASTALARI LİSTELEME VE ARAMA */}
                   <div style={cardStyle}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                      <h3 style={{ margin: 0 }}>📁 Hasta Klasörleriniz ({filteredHastalar.length})</h3>
-                      <input placeholder="Hasta Ara (Ad, Soyad, TC)..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} style={{ ...inputStyle, width: '250px' }} />
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
+                      <div>
+                        <h3 style={{ margin: 0, fontSize: '18px', color: '#ffffff' }}>📁 Kayıtlı Hasta Klasörleri ({filteredHastalar.length})</h3>
+                        <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: '#9ca3af' }}>Detayları görmek için klasöre tıklayın</p>
+                      </div>
+                      <input 
+                        placeholder="🔍 Hasta Ara (Ad, Soyad, TC)..." 
+                        value={searchTerm} 
+                        onChange={e => setSearchTerm(e.target.value)} 
+                        style={{ ...inputStyle, width: '280px' }} 
+                      />
                     </div>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '16px' }}>
                       {filteredHastalar.map(h => (
                         <div 
                           key={h.id} 
-                          onClick={() => setSelectedHasta(h)}
                           style={{
-                            backgroundColor: '#0f172a',
-                            border: '1px solid #334155',
-                            borderRadius: '12px',
-                            padding: '16px',
-                            cursor: 'pointer',
+                            backgroundColor: '#090d16',
+                            border: '1px solid #1f2937',
+                            borderRadius: '16px',
+                            padding: '18px',
+                            position: 'relative',
+                            transition: 'all 0.2s ease',
                             display: 'flex',
-                            alignItems: 'center',
-                            gap: '12px'
+                            justify: 'space-between',
+                            alignItems: 'center'
                           }}
                         >
-                          <span style={{ fontSize: '36px' }}>📁</span>
-                          <div>
-                            <h4 style={{ margin: '0 0 4px 0', color: '#f8fafc', fontSize: '16px' }}>{h.ad} {h.soyad}</h4>
-                            <p style={{ margin: 0, fontSize: '12px', color: '#94a3b8' }}>TC: {h.tc}</p>
-                            <p style={{ margin: 0, fontSize: '12px', color: '#38bdf8', marginTop: '4px' }}>Klasörü Aç ➔</p>
+                          <div 
+                            onClick={() => setSelectedHasta(h)} 
+                            style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '14px', flex: 1 }}
+                          >
+                            <span style={{ fontSize: '40px' }}>📁</span>
+                            <div>
+                              <h4 style={{ margin: '0 0 4px 0', color: '#f3f4f6', fontSize: '16px', fontWeight: '700' }}>{h.ad} {h.soyad}</h4>
+                              <p style={{ margin: 0, fontSize: '13px', color: '#9ca3af' }}>TC: {h.tc}</p>
+                              {h.telefon && <p style={{ margin: '2px 0 0 0', fontSize: '12px', color: '#6b7280' }}>📞 {h.telefon}</p>}
+                            </div>
                           </div>
+
+                          <button 
+                            onClick={(e) => { e.stopPropagation(); handleHastaSil(h.id, `${h.ad} ${h.soyad}`); }}
+                            title="Klasörü Sil"
+                            style={deleteBtnStyle}
+                          >
+                            🗑️
+                          </button>
                         </div>
                       ))}
+
                       {filteredHastalar.length === 0 && (
-                        <p style={{ color: '#64748b', gridColumn: '1 / -1' }}>Henüz bir hasta klasörü oluşturmadınız.</p>
+                        <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '40px 0', color: '#6b7280' }}>
+                          <p style={{ fontSize: '15px' }}>Henüz kayıtlı bir hasta bulunamadı.</p>
+                        </div>
                       )}
                     </div>
                   </div>
                 </div>
               ) : (
-                /* KLASÖR İÇERİĞİ */
+                /* HASTA SEÇİLDİĞİNDE KLASÖR İÇERİĞİ */
                 <div>
-                  <div style={{ ...cardStyle, borderColor: '#38bdf8' }}>
-                    <button 
-                      onClick={() => setSelectedHasta(null)}
-                      style={{ backgroundColor: '#334155', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', marginBottom: '12px', fontSize: '13px' }}
-                    >
-                      ⬅️ Klasörler Listesine Dön
-                    </button>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                      <span style={{ fontSize: '48px' }}>📂</span>
+                  <div style={{ ...cardStyle, borderLeft: '6px solid #10b981' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                       <div>
-                        <h2 style={{ margin: '0 0 4px 0', color: '#38bdf8' }}>{selectedHasta.ad} {selectedHasta.soyad}</h2>
-                        <p style={{ margin: 0, fontSize: '14px', color: '#94a3b8' }}><strong>T.C. Kimlik:</strong> {selectedHasta.tc} | <strong>Telefon:</strong> {selectedHasta.telefon || 'Kayıt yok'}</p>
+                        <button 
+                          onClick={() => setSelectedHasta(null)}
+                          style={{ backgroundColor: '#1f2937', color: '#38bdf8', border: '1px solid #374151', padding: '8px 16px', borderRadius: '10px', cursor: 'pointer', marginBottom: '16px', fontSize: '13px', fontWeight: '600' }}
+                        >
+                          ⬅️ Tüm Klasörlere Dön
+                        </button>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                          <span style={{ fontSize: '48px' }}>📂</span>
+                          <div>
+                            <h2 style={{ margin: '0 0 4px 0', color: '#ffffff', fontSize: '24px', fontWeight: '800' }}>{selectedHasta.ad} {selectedHasta.soyad}</h2>
+                            <p style={{ margin: 0, fontSize: '14px', color: '#9ca3af' }}>
+                              <strong style={{ color: '#d1d5db' }}>T.C. Kimlik:</strong> {selectedHasta.tc} &nbsp;|&nbsp; 
+                              <strong style={{ color: '#d1d5db' }}> Telefon:</strong> {selectedHasta.telefon || 'Kayıt Yok'}
+                            </p>
+                          </div>
+                        </div>
                       </div>
+
+                      <button 
+                        onClick={() => handleHastaSil(selectedHasta.id, `${selectedHasta.ad} ${selectedHasta.soyad}`)}
+                        style={{ backgroundColor: '#7f1d1d', color: '#fecaca', border: 'none', padding: '10px 16px', borderRadius: '10px', cursor: 'pointer', fontSize: '13px', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '6px' }}
+                      >
+                        🗑️ Hasta Klasörünü Sil
+                      </button>
                     </div>
                   </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+                  {/* İLAÇ VE RAPOR MODÜLLERİ (YAN YANA) */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '24px' }}>
+                    
+                    {/* SOL KOLON: İLAÇ / REÇETELER */}
                     <div>
                       <div style={cardStyle}>
-                        <h3 style={{ marginTop: 0, color: '#f59e0b' }}>💊 Klasöre İlaç / Reçete Ekle</h3>
-                        <form onSubmit={handleReceteEkle} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                          <input placeholder="İlaç Adı" value={yeniRecete.ilac_adi} onChange={e => setYeniRecete({...yeniRecete, ilac_adi: e.target.value})} required style={inputStyle} />
-                          <input placeholder="Doz / Kullanım (Örn: 2x1 Tok)" value={yeniRecete.doz} onChange={e => setYeniRecete({...yeniRecete, doz: e.target.value})} style={inputStyle} />
-                          <input type="date" value={yeniRecete.tarih} onChange={e => setYeniRecete({...yeniRecete, tarih: e.target.value})} required style={inputStyle} />
-                          <button type="submit" style={{ ...btnPrimaryStyle, backgroundColor: '#f59e0b' }}>İlacı Kaydet</button>
+                        <h3 style={{ marginTop: 0, color: '#f59e0b', fontSize: '17px', marginBottom: '16px' }}>💊 Klasöre İlaç / Reçete Ekle</h3>
+                        <form onSubmit={handleReceteEkle} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                          <div>
+                            <label style={labelStyle}>İLAÇ ADI</label>
+                            <input placeholder="Örn: Arveles 50mg" value={yeniRecete.ilac_adi} onChange={e => setYeniRecete({...yeniRecete, ilac_adi: e.target.value})} required style={inputStyle} />
+                          </div>
+                          <div>
+                            <label style={labelStyle}>DOZ / KULLANIM</label>
+                            <input placeholder="Örn: 2x1 Tok Karnına" value={yeniRecete.doz} onChange={e => setYeniRecete({...yeniRecete, doz: e.target.value})} style={inputStyle} />
+                          </div>
+                          <div>
+                            <label style={labelStyle}>REÇETE TARİHİ</label>
+                            <input type="date" value={yeniRecete.tarih} onChange={e => setYeniRecete({...yeniRecete, tarih: e.target.value})} required style={inputStyle} />
+                          </div>
+                          <button type="submit" style={{ ...btnPrimaryStyle, backgroundColor: '#d97706', marginTop: '6px' }}>İlacı Kaydet</button>
                         </form>
                       </div>
 
                       <div style={cardStyle}>
-                        <h4 style={{ marginTop: 0 }}>Kayıtlı İlaç Geçmişi ({hastaReceteler.length})</h4>
+                        <h4 style={{ marginTop: 0, color: '#f3f4f6', marginBottom: '16px' }}>Kayıtlı İlaç Geçmişi ({hastaReceteler.length})</h4>
                         {hastaReceteler.map(r => (
-                          <div key={r.id} style={{ backgroundColor: '#0f172a', padding: '10px', borderRadius: '8px', marginBottom: '8px', borderLeft: '4px solid #f59e0b' }}>
-                            <strong style={{ display: 'block', color: '#f8fafc' }}>{r.ilac_adi}</strong>
-                            <span style={{ fontSize: '12px', color: '#94a3b8' }}>Doz: {r.doz || '-'} | Tarih: {r.tarih}</span>
+                          <div key={r.id} style={{ backgroundColor: '#090d16', padding: '14px', borderRadius: '12px', marginBottom: '10px', borderLeft: '4px solid #f59e0b', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div>
+                              <strong style={{ display: 'block', color: '#ffffff', fontSize: '15px' }}>{r.ilac_adi}</strong>
+                              <span style={{ fontSize: '12px', color: '#9ca3af', marginTop: '4px', display: 'block' }}>
+                                💊 Doz: {r.doz || '-'} &nbsp;|&nbsp; 📅 Tarih: <strong style={{ color: '#38bdf8' }}>{formatTarih(r.tarih)}</strong>
+                              </span>
+                            </div>
+                            <button onClick={() => handleReceteSil(r.id)} style={deleteBtnStyle} title="İlacı Sil">🗑️</button>
                           </div>
                         ))}
-                        {hastaReceteler.length === 0 && <p style={{ fontSize: '13px', color: '#64748b' }}>Henüz kayıtlı ilaç yok.</p>}
+                        {hastaReceteler.length === 0 && <p style={{ fontSize: '13px', color: '#6b7280', textAlign: 'center', padding: '12px 0' }}>Henüz kaydedilmiş ilaç yok.</p>}
                       </div>
                     </div>
 
+                    {/* SAĞ KOLON: RAPORLAR */}
                     <div>
                       <div style={cardStyle}>
-                        <h3 style={{ marginTop: 0, color: '#10b981' }}>📄 Klasöre Rapor Ekle</h3>
-                        <form onSubmit={handleRaporEkle} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                          <input placeholder="Rapor Adı / Teşhis" value={yeniRapor.rapor_adi} onChange={e => setYeniRapor({...yeniRapor, rapor_adi: e.target.value})} required style={inputStyle} />
-                          <div style={{ display: 'flex', gap: '8px' }}>
-                            <input type="date" title="Başlangıç Tarihi" value={yeniRapor.baslangic_tarihi} onChange={e => setYeniRapor({...yeniRapor, baslangic_tarihi: e.target.value})} style={inputStyle} />
-                            <input type="date" title="Bitiş Tarihi" value={yeniRapor.bitis_tarihi} onChange={e => setYeniRapor({...yeniRapor, bitis_tarihi: e.target.value})} style={inputStyle} />
+                        <h3 style={{ marginTop: 0, color: '#10b981', fontSize: '17px', marginBottom: '16px' }}>📄 Klasöre Rapor Ekle</h3>
+                        <form onSubmit={handleRaporEkle} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                          <div>
+                            <label style={labelStyle}>RAPOR ADI / TEŞHİS</label>
+                            <input placeholder="Örn: Hipertansiyon Raporu" value={yeniRapor.rapor_adi} onChange={e => setYeniRapor({...yeniRapor, rapor_adi: e.target.value})} required style={inputStyle} />
                           </div>
-                          <textarea placeholder="Rapor Notları / Açıklama..." value={yeniRapor.notlar} onChange={e => setYeniRapor({...yeniRapor, notlar: e.target.value})} style={{ ...inputStyle, minHeight: '60px' }} />
-                          <button type="submit" style={{ ...btnPrimaryStyle, backgroundColor: '#10b981' }}>Raporu Kaydet</button>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                            <div>
+                              <label style={labelStyle}>BAŞLANGIÇ TARİHİ</label>
+                              <input type="date" value={yeniRapor.baslangic_tarihi} onChange={e => setYeniRapor({...yeniRapor, baslangic_tarihi: e.target.value})} style={inputStyle} />
+                            </div>
+                            <div>
+                              <label style={labelStyle}>BİTİŞ TARİHİ</label>
+                              <input type="date" value={yeniRapor.bitis_tarihi} onChange={e => setYeniRapor({...yeniRapor, bitis_tarihi: e.target.value})} style={inputStyle} />
+                            </div>
+                          </div>
+                          <div>
+                            <label style={labelStyle}>RAPOR NOTLARI</label>
+                            <textarea placeholder="Ekstra notlar, açıklama..." value={yeniRapor.notlar} onChange={e => setYeniRapor({...yeniRapor, notlar: e.target.value})} style={{ ...inputStyle, minHeight: '60px', resize: 'vertical' }} />
+                          </div>
+                          <button type="submit" style={{ ...btnPrimaryStyle, backgroundColor: '#059669', marginTop: '6px' }}>Raporu Kaydet</button>
                         </form>
                       </div>
 
                       <div style={cardStyle}>
-                        <h4 style={{ marginTop: 0 }}>Kayıtlı Raporlar ({hastaRaporlar.length})</h4>
+                        <h4 style={{ marginTop: 0, color: '#f3f4f6', marginBottom: '16px' }}>Kayıtlı Raporlar ({hastaRaporlar.length})</h4>
                         {hastaRaporlar.map(rap => (
-                          <div key={rap.id} style={{ backgroundColor: '#0f172a', padding: '10px', borderRadius: '8px', marginBottom: '8px', borderLeft: '4px solid #10b981' }}>
-                            <strong style={{ display: 'block', color: '#f8fafc' }}>{rap.rapor_adi}</strong>
-                            <span style={{ fontSize: '12px', color: '#94a3b8', display: 'block' }}>
-                              Tarih: {rap.baslangic_tarihi || '?'} - {rap.bitis_tarihi || '?'}
-                            </span>
-                            {rap.notlar && <p style={{ fontSize: '12px', color: '#cbd5e1', margin: '4px 0 0 0' }}>Not: {rap.notlar}</p>}
+                          <div key={rap.id} style={{ backgroundColor: '#090d16', padding: '14px', borderRadius: '12px', marginBottom: '10px', borderLeft: '4px solid #10b981', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                            <div style={{ flex: 1 }}>
+                              <strong style={{ display: 'block', color: '#ffffff', fontSize: '15px' }}>{rap.rapor_adi}</strong>
+                              <span style={{ fontSize: '12px', color: '#9ca3af', marginTop: '4px', display: 'block' }}>
+                                📅 Geçerlilik: <strong style={{ color: '#38bdf8' }}>{formatTarih(rap.baslangic_tarihi)}</strong> ile <strong style={{ color: '#38bdf8' }}>{formatTarih(rap.bitis_tarihi)}</strong> arası
+                              </span>
+                              {rap.notlar && <p style={{ fontSize: '12px', color: '#cbd5e1', margin: '6px 0 0 0', backgroundColor: '#111827', padding: '6px 10px', borderRadius: '6px' }}>📝 {rap.notlar}</p>}
+                            </div>
+                            <button onClick={() => handleRaporSil(rap.id)} style={{ ...deleteBtnStyle, marginLeft: '10px' }} title="Raporu Sil">🗑️</button>
                           </div>
                         ))}
-                        {hastaRaporlar.length === 0 && <p style={{ fontSize: '13px', color: '#64748b' }}>Henüz kayıtlı rapor yok.</p>}
+                        {hastaRaporlar.length === 0 && <p style={{ fontSize: '13px', color: '#6b7280', textAlign: 'center', padding: '12px 0' }}>Henüz kaydedilmiş rapor yok.</p>}
                       </div>
                     </div>
+
                   </div>
                 </div>
               )}
@@ -449,18 +599,25 @@ export default function Home() {
   );
 }
 
+/* STİL TANIMLAMALARI */
 const inputStyle = {
-  width: '100%', padding: '10px 12px', backgroundColor: '#0f172a',
-  border: '1px solid #334155', borderRadius: '8px', color: 'white', boxSizing: 'border-box', outline: 'none'
+  width: '100%', padding: '12px 14px', backgroundColor: '#090d16',
+  border: '1px solid #1f2937', borderRadius: '10px', color: '#ffffff', boxSizing: 'border-box', outline: 'none', fontSize: '14px'
+};
+const labelStyle = {
+  display: 'block', fontSize: '11px', fontWeight: '700', color: '#9ca3af', marginBottom: '6px', letterSpacing: '0.5px'
 };
 const btnPrimaryStyle = {
-  backgroundColor: '#4f46e5', color: 'white', border: 'none',
-  padding: '12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer'
+  width: '100%', backgroundColor: '#059669', color: '#ffffff', border: 'none',
+  padding: '12px 16px', borderRadius: '10px', fontWeight: '700', cursor: 'pointer', fontSize: '14px', transition: 'background-color 0.2s'
 };
 const navBtnStyle = {
-  color: 'white', border: 'none', padding: '8px 14px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '13px'
+  border: 'none', padding: '10px 16px', borderRadius: '10px', cursor: 'pointer', fontWeight: '700', fontSize: '13px', transition: 'all 0.2s'
 };
 const cardStyle = {
-  backgroundColor: '#1e293b', border: '1px solid #334155',
-  borderRadius: '12px', padding: '20px', marginBottom: '20px'
+  backgroundColor: '#111827', border: '1px solid #1f2937',
+  borderRadius: '20px', padding: '24px', marginBottom: '24px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.2)'
+};
+const deleteBtnStyle = {
+  backgroundColor: '#374151', color: '#ffffff', border: 'none', width: '34px', height: '34px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', flexShrink: 0
 };
