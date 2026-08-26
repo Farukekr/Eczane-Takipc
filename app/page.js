@@ -6,8 +6,8 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-// ADMIN KULLANICI ADLARI
-const ADMIN_USERS = ['admin', 'faruk', 'omerfarukeker'];
+// ADMIN KULLANICI ADLARI (Yeni yetkili kullanıcı eklendi)
+const ADMIN_USERS = ['admin', 'faruk', 'omerfarukeker', 'tugba', 'fatma', 'fatmatugba', 'fatmatugbaatilla'];
 
 export default function Home() {
   const [username, setUsername] = useState('');
@@ -109,21 +109,26 @@ export default function Home() {
   // ADMIN: TÜM KULLANICILARI VE HASTA SAYILARINI ÇEK
   const fetchAdminStats = useCallback(async () => {
     if (!user) return;
+
+    // Tüm hastaları çek
     const { data: tumHastalar } = await supabase.from('hastalar').select('user_id, id');
+    
+    // Aktif oturumdaki kullanıcı dahil kayıt durumlarını haritalandır
+    const userMap = { [user.id]: 0 };
+
     if (tumHastalar) {
-      const userMap = {};
       tumHastalar.forEach(h => {
         const uId = h.user_id || 'Sahipsiz / Eski Veri';
         userMap[uId] = (userMap[uId] || 0) + 1;
       });
-
-      const statsList = Object.keys(userMap).map(uId => ({
-        user_id: uId,
-        hasta_sayisi: userMap[uId]
-      }));
-
-      setAllUsersStats(statsList);
     }
+
+    const statsList = Object.keys(userMap).map(uId => ({
+      user_id: uId,
+      hasta_sayisi: userMap[uId]
+    }));
+
+    setAllUsersStats(statsList);
   }, [user]);
 
   useEffect(() => {
@@ -166,7 +171,7 @@ export default function Home() {
       await supabase.from('hastalar').delete().eq('user_id', targetUserId);
     }
 
-    showToast('Kullanıcının verileri tamamen temizlendi! 🗑️', 'success');
+    showToast('Kullanıcı kayıtları temizlendi 🗑️', 'success');
     if (inspectUser === targetUserId) setInspectUser(null);
     fetchAdminStats();
     setConfirmModal(null);
@@ -567,17 +572,21 @@ export default function Home() {
                     <button onClick={() => setInspectUser(null)} style={{ backgroundColor: '#374151', color: '#ffffff', border: 'none', padding: '6px 12px', borderRadius: '8px', cursor: 'pointer', fontSize: '12px' }}>Kapat</button>
                   </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '14px' }}>
-                    {inspectHastalar.map(h => (
-                      <div key={h.id} style={{ backgroundColor: '#090d16', border: '1px solid #1f2937', borderRadius: '12px', padding: '14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <div>
-                          <strong style={{ color: '#ffffff', fontSize: '14px' }}>{h.ad} {h.soyad}</strong>
-                          <div style={{ fontSize: '12px', color: '#9ca3af', marginTop: '2px' }}>TC: {h.tc} | Tel: {h.telefon || '-'}</div>
+                  {inspectHastalar.length === 0 ? (
+                    <p style={{ color: '#9ca3af', fontSize: '14px', margin: 0 }}>Bu kullanıcının henüz eklediği bir hasta kaydı yok.</p>
+                  ) : (
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '14px' }}>
+                      {inspectHastalar.map(h => (
+                        <div key={h.id} style={{ backgroundColor: '#090d16', border: '1px solid #1f2937', borderRadius: '12px', padding: '14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div>
+                            <strong style={{ color: '#ffffff', fontSize: '14px' }}>{h.ad} {h.soyad}</strong>
+                            <div style={{ fontSize: '12px', color: '#9ca3af', marginTop: '2px' }}>TC: {h.tc} | Tel: {h.telefon || '-'}</div>
+                          </div>
+                          <button onClick={() => setConfirmModal({ id: h.id, title: `${h.ad} ${h.soyad}`, type: 'hasta' })} style={compactDeleteBtn}>🗑️</button>
                         </div>
-                        <button onClick={() => setConfirmModal({ id: h.id, title: `${h.ad} ${h.soyad}`, type: 'hasta' })} style={compactDeleteBtn}>🗑️</button>
-                      </div>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
