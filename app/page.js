@@ -1,13 +1,11 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
-import toast from 'react-hot-toast';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-// YÖNETİCİ E-POSTA ADRESİNİZ (Bu adrese sahip kullanıcı Admin Panelini görebilir)
 const ADMIN_EMAIL = 'omerfarukeker23@gmail.com'; 
 
 export default function Home() {
@@ -15,30 +13,33 @@ export default function Home() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [user, setUser] = useState(null);
-  const [message, setMessage] = useState(null);
 
-  // Sekme Durumu ('hastalar' veya 'admin')
+  // Özel Site İçi Toast Bildirim Durumu
+  const [toast, setToast] = useState(null);
+
   const [activeTab, setActiveTab] = useState('hastalar');
-
-  // Panel Durumları
   const [hastalar, setHastalar] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedHasta, setSelectedHasta] = useState(null);
 
-  // Seçili Hastanın Detay Verileri
   const [hastaReceteler, setHastaReceteler] = useState([]);
   const [hastaRaporlar, setHastaRaporlar] = useState([]);
 
-  // Form Durumları
   const [yeniHasta, setYeniHasta] = useState({ tc: '', ad: '', soyad: '', telefon: '' });
   const [yeniRecete, setYeniRecete] = useState({ ilac_adi: '', doz: '', tarih: '' });
   const [yeniRapor, setYeniRapor] = useState({ rapor_adi: '', baslangic_tarihi: '', bitis_tarihi: '', notlar: '' });
 
-  // Admin Paneli Verileri
   const [adminUsers, setAdminUsers] = useState([]);
   const [adminLoading, setAdminLoading] = useState(false);
 
-  // Oturum Kontrolü
+  // Şık Site İçi Bildirim Gösterme Fonksiyonu
+  const showToast = (message, type = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => {
+      setToast(null);
+    }, 4000);
+  };
+
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session) setUser(session.user);
@@ -51,13 +52,11 @@ export default function Home() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // Hastaları Çek
   useEffect(() => {
     if (user && activeTab === 'hastalar') fetchHastalar();
     if (user && activeTab === 'admin') fetchAdminStats();
   }, [user, activeTab]);
 
-  // Klasör Açılınca O Hastanın Reçete ve Raporlarını Çek
   useEffect(() => {
     if (selectedHasta && user) {
       fetchHastaDetaylari(selectedHasta.id);
@@ -92,7 +91,6 @@ export default function Home() {
     if (raporData) setHastaRaporlar(raporData);
   };
 
-  // Admin İstatistiklerini Çek
   const fetchAdminStats = async () => {
     setAdminLoading(true);
     const { data, error } = await supabase.rpc('get_admin_dashboard_stats');
@@ -101,34 +99,31 @@ export default function Home() {
     setAdminLoading(false);
   };
 
-  // Auth
   const handleAuth = async (e) => {
     e.preventDefault();
     setLoading(true);
-    setMessage(null);
 
     let { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
-    if (error && error.message.includes("Invalid login credentials")) {
-      const signUpRes = await supabase.auth.signUp({ email, password });
-      if (signUpRes.error) {
-        setMessage({ type: 'error', text: signUpRes.error.message });
-      } else {
-        setMessage({ type: 'success', text: 'Kayıt başarılı! E-posta adresinize gelen doğrulama bağlantısına tıklayın.' });
-      }
-      setLoading(false);
-      return;
-    }
-
-    setLoading(false);
     if (error) {
-      setMessage({ type: 'error', text: error.message });
+      if (error.message.includes("Invalid login credentials")) {
+        const signUpRes = await supabase.auth.signUp({ email, password });
+        if (signUpRes.error) {
+          showToast(signUpRes.error.message, 'error');
+        } else {
+          showToast('Kayıt başarılı! E-postanıza gelen doğrulama bağlantısına tıklayın.', 'success');
+        }
+        setLoading(false);
+        return;
+      }
+      showToast(error.message, 'error');
     } else {
       setUser(data.user);
+      showToast('Başarıyla giriş yapıldı! 👋', 'success');
     }
+    setLoading(false);
   };
 
-  // Hasta Ekleme
   const handleHastaEkle = async (e) => {
     e.preventDefault();
     const { error } = await supabase.from('hastalar').insert([{
@@ -137,15 +132,14 @@ export default function Home() {
     }]);
     
     if (error) {
-      alert('Hasta eklenirken hata: ' + error.message);
+      showToast('Hasta eklenirken hata: ' + error.message, 'error');
     } else {
       setYeniHasta({ tc: '', ad: '', soyad: '', telefon: '' });
       fetchHastalar();
-      alert('Hasta klasörü başarıyla oluşturuldu!');
+      showToast('Hasta klasörü başarıyla oluşturuldu! 🎉', 'success');
     }
   };
 
-  // İlaç/Reçete Ekleme
   const handleReceteEkle = async (e) => {
     e.preventDefault();
     const { error } = await supabase.from('receteler').insert([{
@@ -155,15 +149,14 @@ export default function Home() {
     }]);
     
     if (error) {
-      alert('İlaç eklenirken hata: ' + error.message);
+      showToast('İlaç eklenirken hata: ' + error.message, 'error');
     } else {
       setYeniRecete({ ilac_adi: '', doz: '', tarih: '' });
       fetchHastaDetaylari(selectedHasta.id);
-      alert('İlaç hasta klasörüne eklendi!');
+      showToast('İlaç klasöre eklendi! 💊', 'success');
     }
   };
 
-  // Rapor Ekleme
   const handleRaporEkle = async (e) => {
     e.preventDefault();
     const { error } = await supabase.from('raporlar').insert([{
@@ -173,11 +166,11 @@ export default function Home() {
     }]);
     
     if (error) {
-      alert('Rapor eklenirken hata: ' + error.message);
+      showToast('Rapor eklenirken hata: ' + error.message, 'error');
     } else {
       setYeniRapor({ rapor_adi: '', baslangic_tarihi: '', bitis_tarihi: '', notlar: '' });
       fetchHastaDetaylari(selectedHasta.id);
-      alert('Rapor hasta klasörüne kaydedildi!');
+      showToast('Rapor klasöre kaydedildi! 📄', 'success');
     }
   };
 
@@ -191,6 +184,30 @@ export default function Home() {
 
   return (
     <div style={{ minHeight: '100vh', backgroundColor: '#0f172a', fontFamily: 'system-ui, -apple-system, sans-serif', color: '#f8fafc', padding: '20px' }}>
+      
+      {/* ŞIK SİTE İÇİ BİLDİRİM (TOAST) */}
+      {toast && (
+        <div style={{
+          position: 'fixed',
+          top: '20px',
+          right: '20px',
+          backgroundColor: toast.type === 'error' ? '#ef4444' : '#10b981',
+          color: 'white',
+          padding: '12px 20px',
+          borderRadius: '10px',
+          boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.3)',
+          zIndex: 9999,
+          fontWeight: 'bold',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          animation: 'fadeIn 0.3s'
+        }}>
+          <span>{toast.type === 'error' ? '⚠️' : '✅'}</span>
+          <span>{toast.message}</span>
+        </div>
+      )}
+
       {!user ? (
         /* GİRİŞ EKRANI */
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '80vh' }}>
@@ -200,11 +217,6 @@ export default function Home() {
               <h1 style={{ fontSize: '22px', fontWeight: 'bold' }}>Eczane Takip</h1>
               <p style={{ fontSize: '13px', color: '#94a3b8' }}>Giriş yapın veya kayıt olun</p>
             </div>
-            {message && (
-              <div style={{ padding: '12px', borderRadius: '8px', fontSize: '13px', marginBottom: '16px', backgroundColor: message.type === 'error' ? '#451a1a' : '#064e3b', color: message.type === 'error' ? '#fca5a5' : '#6ee7b7' }}>
-                {message.text}
-              </div>
-            )}
             <form onSubmit={handleAuth}>
               <div style={{ marginBottom: '16px' }}>
                 <label style={{ display: 'block', fontSize: '12px', color: '#94a3b8', marginBottom: '6px' }}>E-POSTA</label>
@@ -231,7 +243,6 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Navigasyon / Çıkış */}
             <div style={{ display: 'flex', gap: '10px' }}>
               <button 
                 onClick={() => { setActiveTab('hastalar'); setSelectedHasta(null); }}
@@ -249,11 +260,11 @@ export default function Home() {
                 </button>
               )}
 
-              <button onClick={() => { setSelectedHasta(null); supabase.auth.signOut(); }} style={{ ...navBtnStyle, backgroundColor: '#64748b' }}>Çıkış</button>
+              <button onClick={() => { setSelectedHasta(null); supabase.auth.signOut(); showToast('Çıkış yapıldı', 'success'); }} style={{ ...navBtnStyle, backgroundColor: '#64748b' }}>Çıkış</button>
             </div>
           </div>
 
-          {/* ADMIN PANELI EKRANI */}
+          {/* ADMIN PANELI */}
           {activeTab === 'admin' && isAdmin && (
             <div>
               <div style={cardStyle}>
@@ -308,7 +319,6 @@ export default function Home() {
           {activeTab === 'hastalar' && (
             <>
               {!selectedHasta ? (
-                /* HASTA LİSTESİ */
                 <div>
                   <div style={cardStyle}>
                     <h3 style={{ marginTop: 0, marginBottom: '16px', color: '#38bdf8' }}>➕ Yeni Hasta Klasörü Oluştur</h3>
@@ -338,7 +348,6 @@ export default function Home() {
                             borderRadius: '12px',
                             padding: '16px',
                             cursor: 'pointer',
-                            transition: 'all 0.2s',
                             display: 'flex',
                             alignItems: 'center',
                             gap: '12px'
@@ -359,7 +368,7 @@ export default function Home() {
                   </div>
                 </div>
               ) : (
-                /* HASTA KLASÖR İÇERİĞİ */
+                /* KLASÖR İÇERİĞİ */
                 <div>
                   <div style={{ ...cardStyle, borderColor: '#38bdf8' }}>
                     <button 
@@ -440,7 +449,6 @@ export default function Home() {
   );
 }
 
-// Ortak Stiller
 const inputStyle = {
   width: '100%', padding: '10px 12px', backgroundColor: '#0f172a',
   border: '1px solid #334155', borderRadius: '8px', color: 'white', boxSizing: 'border-box', outline: 'none'
