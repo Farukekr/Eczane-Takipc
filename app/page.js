@@ -34,8 +34,11 @@ export default function Home() {
   const [adminLoading, setAdminLoading] = useState(false);
 
   // Türkçe Karakterleri Dahili Email Formatına Temizleyen Yardımcı
+  // Türkçe Karakterleri ve Boşlukları Tamamen Temizleyen Fonksiyon
   const getInternalEmail = (uName) => {
+    if (!uName) return '';
     const cleanName = uName
+      .toString()
       .trim()
       .toLowerCase()
       .replace(/ğ/g, 'g')
@@ -44,7 +47,8 @@ export default function Home() {
       .replace(/ı/g, 'i')
       .replace(/ö/g, 'o')
       .replace(/ç/g, 'c')
-      .replace(/\s+/g, '');
+      .replace(/[^a-z0-9]/g, ''); // Harf ve rakam dışındaki tüm boşluk ve özel karakterleri siler
+
     return `${cleanName}@eczane.local`;
   };
 
