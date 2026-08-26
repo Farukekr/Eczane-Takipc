@@ -6,13 +6,9 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-// Şifre istemediğimiz için arka planda sabit bir gizli anahtar kullanıyoruz
-const FIXED_PASSWORD = 'EczaneSystemDefaultPassword2026!';
-
 export default function Home() {
-  const [username, setUsername] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [user, setUser] = useState(null);
+  const [usernameInput, setUsernameInput] = useState('');
+  const [activeUser, setActiveUser] = useState(null);
 
   const [toast, setToast] = useState(null);
   const [confirmModal, setConfirmModal] = useState(null);
@@ -28,9 +24,10 @@ export default function Home() {
   const [yeniRecete, setYeniRecete] = useState({ ilac_adi: '', doz: '', tarih: '' });
   const [yeniRapor, setYeniRapor] = useState({ rapor_adi: '', baslangic_tarihi: '', bitis_tarihi: '', notlar: '' });
 
-  const getInternalEmail = (uName) => {
-    if (!uName) return '';
-    const cleanName = uName
+  // Kullanıcı adını temizleyip benzersiz ID'ye çevirir
+  const cleanUserId = (name) => {
+    if (!name) return '';
+    return name
       .toString()
       .trim()
       .toLowerCase()
@@ -40,14 +37,7 @@ export default function Home() {
       .replace(/ı/g, 'i')
       .replace(/ö/g, 'o')
       .replace(/ç/g, 'c')
-      .replace(/[^a-z0-9]/g, '');
-
-    return `${cleanName}@eczane.local`;
-  };
-
-  const getDisplayName = (emailStr) => {
-    if (!emailStr) return '';
-    return emailStr.split('@')[0];
+      .replace(/[^a-z0-9]/g, '_');
   };
 
   const formatTarih = (tarihStr) => {
@@ -59,82 +49,89 @@ export default function Home() {
 
   const showToast = (message, type = 'success') => {
     setToast({ message, type });
-    setTimeout(() => setToast(null), 4000);
+    setTimeout(() => setToast(null), 3000);
   };
 
+  // Sayfa açıldığında hafızadaki oturumu kontrol et
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) setUser(session.user);
-    });
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session ? session.user : null);
-    });
-
-    return () => subscription.unsubscribe();
+    const savedUser = localStorage.getItem('eczane_active_user');
+    if (savedUser) {
+      try {
+        setActiveUser(JSON.parse(savedUser));
+      } catch (e) {
+        localStorage.removeItem('eczane_active_user');
+      }
+    }
   }, []);
 
-  const fetchHastalar = useCallback(async () => {
-    if (!user) return;
-    const { data } = await supabase.from('hastalar').select('*').eq('user_id', user.id);
-    if (data) setHastalar(data);
-  }, [user]);
-
-  useEffect(() => {
-    if (user) fetchHastalar();
-  }, [user, fetchHastalar]);
-
-  const fetchHastaDetaylari = useCallback(async (hastaId) => {
-    if (!user) return;
-    const { data: receteData } = await supabase.from('receteler').select('*').eq('hasta_id', hastaId).eq('user_id', user.id).order('created_at', { ascending: false });
-    if (receteData) setHastaReceteler(receteData);
-
-    const { data: raporData } = await supabase.from('raporlar').select('*').eq('hasta_id', hastaId).eq('user_id', user.id).order('created_at', { ascending: false });
-    if (raporData) setHastaRaporlar(raporData);
-  }, [user]);
-
-  useEffect(() => {
-    if (selectedHasta && user) fetchHastaDetaylari(selectedHasta.id);
-  }, [selectedHasta, user, fetchHastaDetaylari]);
-
-  // ŞİFRESİZ DİREKT GİRİŞ VEYA OTOMATİK HESAP AÇMA
-  const handleDirectLogin = async (e) => {
+  // ŞİFRESİZ ANINDA GİRİŞ
+  const handleLogin = (e) => {
     e.preventDefault();
-    if (!username.trim()) return;
-    setLoading(true);
+    if (!usernameInput.trim()) return;
 
-    const internalEmail = getInternalEmail(username);
+    const uId = cleanUserId(usernameInput);
+    const userData = { id: uId, name: usernameInput.trim() };
 
-    // Oturum açmayı dene
-    let { data, error } = await supabase.auth.signInWithPassword({
-      email: internalEmail,
-      password: FIXED_PASSWORD
-    });
-
-    // Hesap henüz yoksa otomatik oluştur ve gir
-    if (error) {
-      const signUpRes = await supabase.auth.signUp({
-        email: internalEmail,
-        password: FIXED_PASSWORD
-      });
-
-      if (signUpRes.error) {
-        showToast('Giriş yapılamadı: ' + signUpRes.error.message, 'error');
-      } else {
-        setUser(signUpRes.data.user);
-        showToast(`Hoş geldin ${username}! Hesabın otomatik oluşturuldu.`, 'success');
-      }
-    } else {
-      setUser(data.user);
-      showToast(`Hoş geldin ${username}!`, 'success');
-    }
-
-    setLoading(false);
+    localStorage.setItem('eczane_active_user', JSON.stringify(userData));
+    setActiveUser(userData);
+    showToast(`Hoş geldin ${userData.name}!`, 'success');
   };
 
+  const handleLogout = () => {
+    localStorage.removeItem('eczane_active_user');
+    setActiveUser(null);
+    setSelectedHasta(null);
+    showToast('Çıkış yapıldı', 'success');
+  };
+
+  // HASTALARI ÇEK
+  const fetchHastalar = useCallback(async () => {
+    if (!activeUser) return;
+    const { data, error } = await supabase
+      .from('hastalar')
+      .select('*')
+      .eq('user_id', activeUser.id);
+
+    if (error) console.error('Hasta çekme hatası:', error);
+    if (data) setHastalar(data);
+  }, [activeUser]);
+
+  useEffect(() => {
+    if (activeUser) fetchHastalar();
+  }, [activeUser, fetchHastalar]);
+
+  // HASTA DETAYLARINI ÇEK
+  const fetchHastaDetaylari = useCallback(async (hastaId) => {
+    if (!activeUser) return;
+
+    const { data: receteData } = await supabase
+      .from('receteler')
+      .select('*')
+      .eq('hasta_id', hastaId)
+      .eq('user_id', activeUser.id)
+      .order('created_at', { ascending: false });
+    if (receteData) setHastaReceteler(receteData);
+
+    const { data: raporData } = await supabase
+      .from('raporlar')
+      .select('*')
+      .eq('hasta_id', hastaId)
+      .eq('user_id', activeUser.id)
+      .order('created_at', { ascending: false });
+    if (raporData) setHastaRaporlar(raporData);
+  }, [activeUser]);
+
+  useEffect(() => {
+    if (selectedHasta && activeUser) fetchHastaDetaylari(selectedHasta.id);
+  }, [selectedHasta, activeUser, fetchHastaDetaylari]);
+
+  // HASTA EKLE
   const handleHastaEkle = async (e) => {
     e.preventDefault();
-    const { error } = await supabase.from('hastalar').insert([{ ...yeniHasta, user_id: user.id }]);
+    const { error } = await supabase
+      .from('hastalar')
+      .insert([{ ...yeniHasta, user_id: activeUser.id }]);
+
     if (error) {
       showToast('Hata: ' + error.message, 'error');
     } else {
@@ -148,6 +145,7 @@ export default function Home() {
     await supabase.from('receteler').delete().eq('hasta_id', hastaId);
     await supabase.from('raporlar').delete().eq('hasta_id', hastaId);
     const { error } = await supabase.from('hastalar').delete().eq('id', hastaId);
+    
     if (error) {
       showToast('Hata: ' + error.message, 'error');
     } else {
@@ -158,9 +156,13 @@ export default function Home() {
     setConfirmModal(null);
   };
 
+  // İLAÇ EKLE / SİL
   const handleReceteEkle = async (e) => {
     e.preventDefault();
-    const { error } = await supabase.from('receteler').insert([{ ...yeniRecete, hasta_id: selectedHasta.id, user_id: user.id }]);
+    const { error } = await supabase
+      .from('receteler')
+      .insert([{ ...yeniRecete, hasta_id: selectedHasta.id, user_id: activeUser.id }]);
+
     if (error) {
       showToast('Hata: ' + error.message, 'error');
     } else {
@@ -180,9 +182,13 @@ export default function Home() {
     setConfirmModal(null);
   };
 
+  // RAPOR EKLE / SİL
   const handleRaporEkle = async (e) => {
     e.preventDefault();
-    const { error } = await supabase.from('raporlar').insert([{ ...yeniRapor, hasta_id: selectedHasta.id, user_id: user.id }]);
+    const { error } = await supabase
+      .from('raporlar')
+      .insert([{ ...yeniRapor, hasta_id: selectedHasta.id, user_id: activeUser.id }]);
+
     if (error) showToast('Hata: ' + error.message, 'error');
     else {
       setYeniRapor({ rapor_adi: '', baslangic_tarihi: '', bitis_tarihi: '', notlar: '' });
@@ -205,10 +211,9 @@ export default function Home() {
     .filter(h => h.ad?.toLowerCase().includes(searchTerm.toLowerCase()) || h.soyad?.toLowerCase().includes(searchTerm.toLowerCase()) || h.tc?.includes(searchTerm))
     .sort((a, b) => a.ad.localeCompare(b.ad, 'tr'));
 
-  const currentUserDisplayName = user ? getDisplayName(user.email) : '';
-
   return (
     <div style={{ minHeight: '100vh', backgroundColor: '#090d16', fontFamily: 'system-ui, sans-serif', color: '#f1f5f9', padding: '24px 16px' }}>
+      {/* TOAST BİLDİRİMİ */}
       {toast && (
         <div style={{ position: 'fixed', top: '24px', right: '24px', backgroundColor: toast.type === 'error' ? '#dc2626' : '#059669', color: '#ffffff', padding: '14px 22px', borderRadius: '12px', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5)', zIndex: 9999, fontWeight: '600', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '10px' }}>
           <span>{toast.type === 'error' ? '⚠️' : '✅'}</span>
@@ -216,6 +221,7 @@ export default function Home() {
         </div>
       )}
 
+      {/* SİLME ONAY MODALI */}
       {confirmModal && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0, 0, 0, 0.75)', backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000, padding: '16px' }}>
           <div style={{ backgroundColor: '#111827', border: '1px solid #1f2937', borderRadius: '20px', padding: '28px', maxWidth: '440px', width: '100%', textAlign: 'center' }}>
@@ -234,7 +240,8 @@ export default function Home() {
         </div>
       )}
 
-      {!user ? (
+      {/* GİRİŞ EKRANI */}
+      {!activeUser ? (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '85vh' }}>
           <div style={{ backgroundColor: '#111827', border: '1px solid #1f2937', borderRadius: '24px', padding: '40px 32px', width: '100%', maxWidth: '400px' }}>
             <div style={{ textAlign: 'center', marginBottom: '32px' }}>
@@ -242,18 +249,26 @@ export default function Home() {
               <h1 style={{ fontSize: '26px', fontWeight: '800', color: '#ffffff', margin: '0 0 6px 0' }}>Eczane Takip</h1>
               <p style={{ fontSize: '14px', color: '#9ca3af', margin: 0 }}>Giriş yapmak için adınızı yazın</p>
             </div>
-            <form onSubmit={handleDirectLogin}>
+            <form onSubmit={handleLogin}>
               <div style={{ marginBottom: '24px' }}>
                 <label style={labelStyle}>KULLANICI ADI</label>
-                <input type="text" required value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Kullanıcı adı" style={modernInputStyle} />
+                <input 
+                  type="text" 
+                  required 
+                  value={usernameInput} 
+                  onChange={(e) => setUsernameInput(e.target.value)} 
+                  placeholder="Kullanıcı Adı" 
+                  style={modernInputStyle} 
+                />
               </div>
-              <button type="submit" disabled={loading} style={btnPrimaryStyle}>
-                {loading ? 'Giriş Yapılıyor...' : 'Sisteme Giriş Yap ➔'}
+              <button type="submit" style={btnPrimaryStyle}>
+                Sisteme Giriş Yap ➔
               </button>
             </form>
           </div>
         </div>
       ) : (
+        /* ANA PANEL */
         <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
           {/* ÜST BAR */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px', padding: '20px 24px', backgroundColor: '#111827', border: '1px solid #1f2937', borderRadius: '20px' }}>
@@ -262,12 +277,12 @@ export default function Home() {
               <div>
                 <h1 style={{ fontSize: '20px', fontWeight: '800', margin: 0, color: '#ffffff' }}>Eczane Takip Sistemi</h1>
                 <p style={{ fontSize: '13px', color: '#10b981', margin: '2px 0 0 0', fontWeight: '600' }}>
-                  👤 Aktif Kullanıcı: {currentUserDisplayName}
+                  👤 Aktif Kullanıcı: {activeUser.name}
                 </p>
               </div>
             </div>
 
-            <button onClick={() => { setSelectedHasta(null); supabase.auth.signOut(); showToast('Çıkış yapıldı', 'success'); }} style={{ ...navBtnStyle, backgroundColor: '#374151', color: '#d1d5db' }}>Çıkış Yap</button>
+            <button onClick={handleLogout} style={{ ...navBtnStyle, backgroundColor: '#374151', color: '#d1d5db' }}>Çıkış Yap</button>
           </div>
 
           {!selectedHasta ? (
