@@ -6,7 +6,7 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-// ADMIN KULLANICI ADLARI (Yeni yetkili kullanıcı eklendi)
+// ADMIN KULLANICI ADLARI
 const ADMIN_USERS = ['admin', 'faruk', 'omerfarukeker', 'tugba', 'fatma', 'fatmatugba', 'fatmatugbaatilla'];
 
 export default function Home() {
@@ -110,22 +110,32 @@ export default function Home() {
   const fetchAdminStats = useCallback(async () => {
     if (!user) return;
 
-    // Tüm hastaları çek
-    const { data: tumHastalar } = await supabase.from('hastalar').select('user_id, id');
+    // Tüm hastaları ve ekleyenlerin adlarını çek
+    const { data: tumHastalar } = await supabase.from('hastalar').select('user_id, id, ekleyen_kullanici');
     
-    // Aktif oturumdaki kullanıcı dahil kayıt durumlarını haritalandır
-    const userMap = { [user.id]: 0 };
+    const userMap = {};
+    const currentUserDisplay = getDisplayName(user.email);
+    userMap[currentUserDisplay] = { user_id: user.id, count: 0, is_admin: ADMIN_USERS.includes(currentUserDisplay.toLowerCase()) };
 
     if (tumHastalar) {
       tumHastalar.forEach(h => {
-        const uId = h.user_id || 'Sahipsiz / Eski Veri';
-        userMap[uId] = (userMap[uId] || 0) + 1;
+        const uName = h.ekleyen_kullanici || h.user_id || 'Bilinmeyen Kullanıcı';
+        if (!userMap[uName]) {
+          userMap[uName] = { 
+            user_id: h.user_id, 
+            count: 0, 
+            is_admin: ADMIN_USERS.includes(uName.toLowerCase()) 
+          };
+        }
+        userMap[uName].count += 1;
       });
     }
 
-    const statsList = Object.keys(userMap).map(uId => ({
-      user_id: uId,
-      hasta_sayisi: userMap[uId]
+    const statsList = Object.keys(userMap).map(uName => ({
+      username: uName,
+      user_id: userMap[uName].user_id,
+      hasta_sayisi: userMap[uName].count,
+      is_admin: userMap[uName].is_admin
     }));
 
     setAllUsersStats(statsList);
@@ -136,25 +146,33 @@ export default function Home() {
   }, [activeTab, user, fetchAdminStats]);
 
   // ADMIN: BİR KULLANICININ HASTALARINI İNCELE
-  const handleInspectUser = async (targetUserId) => {
-    setInspectUser(targetUserId);
+  const handleInspectUser = async (targetUser) => {
+    setInspectUser(targetUser.username);
     let query = supabase.from('hastalar').select('*');
-    if (targetUserId === 'Sahipsiz / Eski Veri') {
+    if (targetUser.username === 'Bilinmeyen Kullanıcı') {
       query = query.is('user_id', null);
+    } else if (targetUser.user_id) {
+      query = query.eq('user_id', targetUser.user_id);
     } else {
-      query = query.eq('user_id', targetUserId);
+      query = query.eq('ekleyen_kullanici', targetUser.username);
     }
     const { data } = await query;
     if (data) setInspectHastalar(data);
   };
 
-  // ADMIN: KULLANICIYI VE TÜM VERİLERİNİ SİL (SİSTEMDEN AT)
-  const executeKullaniciSil = async (targetUserId) => {
+  // ADMIN: KULLANICIYI VE TÜM VERİLERİNİ SİL (ADMIN SİLİNEMEZ)
+  const executeKullaniciSil = async (targetUser) => {
+    if (targetUser.is_admin || ADMIN_USERS.includes(targetUser.username.toLowerCase())) {
+      showToast('⚠️ Yönetici hesapları sistemden silinemez!', 'error');
+      setConfirmModal(null);
+      return;
+    }
+
     let queryHastalar = supabase.from('hastalar').select('id');
-    if (targetUserId === 'Sahipsiz / Eski Veri') {
-      queryHastalar = queryHastalar.is('user_id', null);
+    if (targetUser.user_id) {
+      queryHastalar = queryHastalar.eq('user_id', targetUser.user_id);
     } else {
-      queryHastalar = queryHastalar.eq('user_id', targetUserId);
+      queryHastalar = queryHastalar.eq('ekleyen_kullanici', targetUser.username);
     }
 
     const { data: userHastalar } = await queryHastalar;
@@ -165,14 +183,14 @@ export default function Home() {
       await supabase.from('raporlar').delete().in('hasta_id', hastaIds);
     }
 
-    if (targetUserId === 'Sahipsiz / Eski Veri') {
-      await supabase.from('hastalar').delete().is('user_id', null);
+    if (targetUser.user_id) {
+      await supabase.from('hastalar').delete().eq('user_id', targetUser.user_id);
     } else {
-      await supabase.from('hastalar').delete().eq('user_id', targetUserId);
+      await supabase.from('hastalar').delete().eq('ekleyen_kullanici', targetUser.username);
     }
 
-    showToast('Kullanıcı kayıtları temizlendi 🗑️', 'success');
-    if (inspectUser === targetUserId) setInspectUser(null);
+    showToast('Kullanıcının verileri silindi 🗑️', 'success');
+    if (inspectUser === targetUser.username) setInspectUser(null);
     fetchAdminStats();
     setConfirmModal(null);
   };
@@ -219,7 +237,8 @@ export default function Home() {
   // HASTA EKLE
   const handleHastaEkle = async (e) => {
     e.preventDefault();
-    const { error } = await supabase.from('hastalar').insert([{ ...yeniHasta, user_id: user.id }]);
+    const currentUserName = getDisplayName(user.email);
+    const { error } = await supabase.from('hastalar').insert([{ ...yeniHasta, user_id: user.id, ekleyen_kullanici: currentUserName }]);
     if (error) {
       showToast('Hata: ' + error.message, 'error');
     } else {
@@ -239,7 +258,7 @@ export default function Home() {
       showToast('Hasta klasörü silindi 🗑️', 'success');
       if (selectedHasta?.id === hastaId) setSelectedHasta(null);
       fetchHastalar();
-      if (inspectUser) handleInspectUser(inspectUser);
+      if (inspectUser) handleInspectUser({ username: inspectUser });
     }
     setConfirmModal(null);
   };
@@ -319,7 +338,7 @@ export default function Home() {
                 if (confirmModal.type === 'hasta') executeHastaSil(confirmModal.id);
                 if (confirmModal.type === 'recete') executeReceteSil(confirmModal.id);
                 if (confirmModal.type === 'rapor') executeRaporSil(confirmModal.id);
-                if (confirmModal.type === 'user') executeKullaniciSil(confirmModal.id);
+                if (confirmModal.type === 'user') executeKullaniciSil(confirmModal.targetUser);
               }} style={{ flex: 1, backgroundColor: '#dc2626', color: '#ffffff', border: 'none', padding: '12px', borderRadius: '10px', fontWeight: '700', cursor: 'pointer' }}>Evet, Sil</button>
             </div>
           </div>
@@ -547,17 +566,24 @@ export default function Home() {
                   {allUsersStats.map((st, idx) => (
                     <div key={idx} style={{ backgroundColor: '#090d16', border: '1px solid #312e81', borderRadius: '16px', padding: '20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
                       <div>
-                        <div style={{ fontSize: '12px', color: '#818cf8', fontWeight: '700', textTransform: 'uppercase' }}>KULLANICI / USER ID</div>
-                        <div style={{ fontSize: '13px', color: '#f3f4f6', wordBreak: 'break-all', margin: '4px 0 14px 0', fontFamily: 'monospace' }}>{st.user_id}</div>
+                        <div style={{ fontSize: '12px', color: '#818cf8', fontWeight: '700', textTransform: 'uppercase', display: 'flex', justifyContent: 'space-between' }}>
+                          <span>KULLANICI</span>
+                          {st.is_admin && <span style={{ color: '#fbbf24' }}>👑 Admin</span>}
+                        </div>
+                        <div style={{ fontSize: '16px', color: '#f3f4f6', fontWeight: 'bold', margin: '4px 0 14px 0' }}>{st.username}</div>
                         <div style={{ fontSize: '24px', fontWeight: '800', color: '#34d399' }}>{st.hasta_sayisi} <span style={{ fontSize: '14px', color: '#9ca3af', fontWeight: 'normal' }}>Hasta Klasörü</span></div>
                       </div>
                       <div style={{ display: 'flex', gap: '8px', marginTop: '16px' }}>
-                        <button onClick={() => handleInspectUser(st.user_id)} style={{ ...modernBtnStyle, backgroundColor: '#4f46e5', color: '#ffffff', flex: 1 }}>
+                        <button onClick={() => handleInspectUser(st)} style={{ ...modernBtnStyle, backgroundColor: '#4f46e5', color: '#ffffff', flex: 1 }}>
                           👁️ İncele
                         </button>
-                        <button onClick={() => setConfirmModal({ id: st.user_id, title: `Kullanıcı (${st.user_id}) ve Tüm Verileri`, type: 'user' })} style={{ ...modernBtnStyle, backgroundColor: '#dc2626', color: '#ffffff', width: '42px', flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Kullanıcıyı ve Hastalarını Sil">
-                          🗑️
-                        </button>
+                        
+                        {/* Admin kullanıcılar silinemez */}
+                        {!st.is_admin && (
+                          <button onClick={() => setConfirmModal({ targetUser: st, title: `Kullanıcı (${st.username}) ve Tüm Verileri`, type: 'user' })} style={{ ...modernBtnStyle, backgroundColor: '#dc2626', color: '#ffffff', width: '42px', flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Kullanıcıyı ve Hastalarını Sil">
+                            🗑️
+                          </button>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -568,7 +594,7 @@ export default function Home() {
               {inspectUser && (
                 <div style={cardStyle}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-                    <h4 style={{ margin: 0, color: '#f3f4f6', fontSize: '16px' }}>🔍 İnceleme Ekranı: <span style={{ color: '#818cf8', fontFamily: 'monospace' }}>{inspectUser}</span></h4>
+                    <h4 style={{ margin: 0, color: '#f3f4f6', fontSize: '16px' }}>🔍 İnceleme Ekranı: <span style={{ color: '#818cf8' }}>{inspectUser}</span></h4>
                     <button onClick={() => setInspectUser(null)} style={{ backgroundColor: '#374151', color: '#ffffff', border: 'none', padding: '6px 12px', borderRadius: '8px', cursor: 'pointer', fontSize: '12px' }}>Kapat</button>
                   </div>
 
