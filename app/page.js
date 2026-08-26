@@ -6,8 +6,8 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-// SISTEMIN TEK ANA ADMİNİ
-const ADMIN_USERNAME = 'omerfarukeker23';
+// SISTEMIN TEK ANA ADMİNİ (Kullanıcı Adı)
+const ADMIN_USERNAME = 'omerfarukeker';
 
 export default function Home() {
   const [username, setUsername] = useState('');
@@ -33,8 +33,18 @@ export default function Home() {
   const [adminUsers, setAdminUsers] = useState([]);
   const [adminLoading, setAdminLoading] = useState(false);
 
+  // Türkçe Karakterleri Dahili Email Formatına Temizleyen Yardımcı
   const getInternalEmail = (uName) => {
-    const cleanName = uName.trim().toLowerCase().replace(/\s+/g, '');
+    const cleanName = uName
+      .trim()
+      .toLowerCase()
+      .replace(/ğ/g, 'g')
+      .replace(/ü/g, 'u')
+      .replace(/ş/g, 's')
+      .replace(/ı/g, 'i')
+      .replace(/ö/g, 'o')
+      .replace(/ç/g, 'c')
+      .replace(/\s+/g, '');
     return `${cleanName}@eczane.local`;
   };
 
@@ -63,8 +73,8 @@ export default function Home() {
 
     const currentUsername = getDisplayName(sessionUser.email).toLowerCase();
 
-    // Ömer Faruk EKER Her Zaman Yetkilidir
-    if (currentUsername === ADMIN_USERNAME.toLowerCase()) {
+    // Ömer Faruk EKER Her Zaman Dokunulmaz Admin'dir
+    if (currentUsername.includes('omerfarukeker') || currentUsername.includes('ömerfarukeker')) {
       setUser(sessionUser);
       return;
     }
@@ -172,7 +182,7 @@ export default function Home() {
     if (error) {
       showToast('Hata: ' + error.message, 'error');
     } else {
-      showToast(`${targetUsername} kullanıcısının oturumu sonlandırıldı! 🚪`, 'success');
+      showToast(`${targetUsername} kullanıcısının oturumu kapatıldı! 🚪`, 'success');
       fetchAdminStats();
     }
     setConfirmModal(null);
@@ -183,7 +193,7 @@ export default function Home() {
     if (error) {
       showToast('Hata: ' + error.message, 'error');
     } else {
-      showToast(`${targetUsername} hesabı ve tüm verileri silindi! 🗑️`, 'success');
+      showToast(`${targetUsername} hesabı ve verileri silindi! 🗑️`, 'success');
       fetchAdminStats();
     }
     setConfirmModal(null);
@@ -263,7 +273,7 @@ export default function Home() {
     .sort((a, b) => a.ad.localeCompare(b.ad, 'tr'));
 
   const currentUserDisplayName = user ? getDisplayName(user.email) : '';
-  const isAdmin = currentUserDisplayName.toLowerCase() === ADMIN_USERNAME.toLowerCase();
+  const isAdmin = currentUserDisplayName.includes('omerfarukeker') || currentUserDisplayName.includes('ömerfarukeker');
 
   return (
     <div style={{ minHeight: '100vh', backgroundColor: '#090d16', fontFamily: 'system-ui, sans-serif', color: '#f1f5f9', padding: '24px 16px' }}>
@@ -306,7 +316,7 @@ export default function Home() {
             <form onSubmit={handleAuth}>
               <div style={{ marginBottom: '20px' }}>
                 <label style={labelStyle}>KULLANICI ADI</label>
-                <input type="text" required value={username} onChange={(e) => setUsername(e.target.value)} placeholder="kullanici_adi" style={inputStyle} />
+                <input type="text" required value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Ömer Faruk EKER" style={inputStyle} />
               </div>
               <div style={{ marginBottom: '24px' }}>
                 <label style={labelStyle}>PAROLA</label>
@@ -351,7 +361,7 @@ export default function Home() {
             <div style={cardStyle}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
                 <div>
-                  <h2 style={{ margin: 0, color: '#ef4444', fontSize: '20px', fontWeight: '700' }}>👑 Admin Yönetim Paneli (Ömer Faruk EKER)</h2>
+                  <h2 style={{ margin: 0, color: '#ef4444', fontSize: '20px', fontWeight: '700' }}>👑 Admin Yönetim Paneli</h2>
                   <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: '#9ca3af' }}>Kullanıcıların siteye girişini onaylayın, oturumlarını kapatın veya tamamen silin</p>
                 </div>
                 <button onClick={fetchAdminStats} style={{ ...navBtnStyle, backgroundColor: '#1f2937', border: '1px solid #374151' }}>🔄 Verileri Yenile</button>
@@ -375,7 +385,7 @@ export default function Home() {
                     </thead>
                     <tbody>
                       {adminUsers.map(u => {
-                        const isMainAdmin = u.display_name.toLowerCase() === ADMIN_USERNAME.toLowerCase();
+                        const isMainAdmin = u.display_name.toLowerCase().includes('omerfarukeker') || u.display_name.toLowerCase().includes('ömerfarukeker');
                         return (
                           <tr key={u.user_id} style={{ borderBottom: '1px solid #1f2937' }}>
                             <td style={{ padding: '14px', fontWeight: '600', color: '#f3f4f6' }}>
