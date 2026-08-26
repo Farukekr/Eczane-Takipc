@@ -29,7 +29,7 @@ export default function Home() {
 
   // Admin İstatistikleri ve İnceleme State'leri
   const [allUsersStats, setAllUsersStats] = useState([]);
-  const [inspectUser, setInspectUser] = useState(null); // Adminin incelediği kullanıcı
+  const [inspectUser, setInspectUser] = useState(null);
   const [inspectHastalar, setInspectHastalar] = useState([]);
 
   const [yeniHasta, setYeniHasta] = useState({ tc: '', ad: '', soyad: '', telefon: '' });
@@ -113,7 +113,8 @@ export default function Home() {
     if (tumHastalar) {
       const userMap = {};
       tumHastalar.forEach(h => {
-        userMap[h.user_id] = (userMap[h.user_id] || 0) + 1;
+        const uId = h.user_id || 'Sahipsiz / Eski Veri';
+        userMap[uId] = (userMap[uId] || 0) + 1;
       });
 
       const statsList = Object.keys(userMap).map(uId => ({
@@ -132,11 +133,46 @@ export default function Home() {
   // ADMIN: BİR KULLANICININ HASTALARINI İNCELE
   const handleInspectUser = async (targetUserId) => {
     setInspectUser(targetUserId);
-    const { data } = await supabase.from('hastalar').select('*').eq('user_id', targetUserId);
+    let query = supabase.from('hastalar').select('*');
+    if (targetUserId === 'Sahipsiz / Eski Veri') {
+      query = query.is('user_id', null);
+    } else {
+      query = query.eq('user_id', targetUserId);
+    }
+    const { data } = await query;
     if (data) setInspectHastalar(data);
   };
 
-  // GİRİŞ / KAYIT İŞLEMLERİ (ONAYSIZ DİREKT KAYIT & GİRİŞ)
+  // ADMIN: KULLANICIYI VE TÜM VERİLERİNİ SİL (SİSTEMDEN AT)
+  const executeKullaniciSil = async (targetUserId) => {
+    let queryHastalar = supabase.from('hastalar').select('id');
+    if (targetUserId === 'Sahipsiz / Eski Veri') {
+      queryHastalar = queryHastalar.is('user_id', null);
+    } else {
+      queryHastalar = queryHastalar.eq('user_id', targetUserId);
+    }
+
+    const { data: userHastalar } = await queryHastalar;
+
+    if (userHastalar && userHastalar.length > 0) {
+      const hastaIds = userHastalar.map(h => h.id);
+      await supabase.from('receteler').delete().in('hasta_id', hastaIds);
+      await supabase.from('raporlar').delete().in('hasta_id', hastaIds);
+    }
+
+    if (targetUserId === 'Sahipsiz / Eski Veri') {
+      await supabase.from('hastalar').delete().is('user_id', null);
+    } else {
+      await supabase.from('hastalar').delete().eq('user_id', targetUserId);
+    }
+
+    showToast('Kullanıcının verileri tamamen temizlendi! 🗑️', 'success');
+    if (inspectUser === targetUserId) setInspectUser(null);
+    fetchAdminStats();
+    setConfirmModal(null);
+  };
+
+  // GİRİŞ / KAYIT İŞLEMLERİ
   const handleAuth = async (e) => {
     e.preventDefault();
     if (!username.trim() || !password) return;
@@ -147,7 +183,10 @@ export default function Home() {
     if (isSignUp) {
       const { data, error } = await supabase.auth.signUp({
         email: internalEmail,
-        password: password
+        password: password,
+        options: {
+          data: { display_name: username }
+        }
       });
 
       if (error) {
@@ -268,13 +307,14 @@ export default function Home() {
           <div style={{ backgroundColor: '#111827', border: '1px solid #1f2937', borderRadius: '20px', padding: '28px', maxWidth: '440px', width: '100%', textAlign: 'center' }}>
             <div style={{ fontSize: '44px', marginBottom: '12px' }}>⚠️</div>
             <h3 style={{ margin: '0 0 10px 0', color: '#ffffff', fontSize: '20px', fontWeight: '700' }}>İşlemi Onayla</h3>
-            <p style={{ fontSize: '14px', color: '#9ca3af', margin: '0 0 24px 0' }}><strong style={{ color: '#ef4444' }}>"{confirmModal.title}"</strong> öğesini silmek istediğinizden emin misiniz?</p>
+            <p style={{ fontSize: '14px', color: '#9ca3af', margin: '0 0 24px 0' }}><strong style={{ color: '#ef4444' }}>"{confirmModal.title}"</strong> silmek/temizlemek istediğinizden emin misiniz?</p>
             <div style={{ display: 'flex', gap: '12px' }}>
               <button onClick={() => setConfirmModal(null)} style={{ flex: 1, backgroundColor: '#1f2937', color: '#9ca3af', border: '1px solid #374151', padding: '12px', borderRadius: '10px', fontWeight: '600', cursor: 'pointer' }}>İptal</button>
               <button onClick={() => {
                 if (confirmModal.type === 'hasta') executeHastaSil(confirmModal.id);
                 if (confirmModal.type === 'recete') executeReceteSil(confirmModal.id);
                 if (confirmModal.type === 'rapor') executeRaporSil(confirmModal.id);
+                if (confirmModal.type === 'user') executeKullaniciSil(confirmModal.id);
               }} style={{ flex: 1, backgroundColor: '#dc2626', color: '#ffffff', border: 'none', padding: '12px', borderRadius: '10px', fontWeight: '700', cursor: 'pointer' }}>Evet, Sil</button>
             </div>
           </div>
@@ -498,17 +538,22 @@ export default function Home() {
               <div style={cardStyle}>
                 <h3 style={{ marginTop: 0, color: '#818cf8', fontSize: '18px', marginBottom: '20px' }}>👑 Admin Paneli - Eczane Personelleri & İstatistikler</h3>
                 
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '16px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px' }}>
                   {allUsersStats.map((st, idx) => (
                     <div key={idx} style={{ backgroundColor: '#090d16', border: '1px solid #312e81', borderRadius: '16px', padding: '20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
                       <div>
-                        <div style={{ fontSize: '12px', color: '#818cf8', fontWeight: '700', textTransform: 'uppercase' }}>PERSONEL USER ID</div>
+                        <div style={{ fontSize: '12px', color: '#818cf8', fontWeight: '700', textTransform: 'uppercase' }}>KULLANICI / USER ID</div>
                         <div style={{ fontSize: '13px', color: '#f3f4f6', wordBreak: 'break-all', margin: '4px 0 14px 0', fontFamily: 'monospace' }}>{st.user_id}</div>
                         <div style={{ fontSize: '24px', fontWeight: '800', color: '#34d399' }}>{st.hasta_sayisi} <span style={{ fontSize: '14px', color: '#9ca3af', fontWeight: 'normal' }}>Hasta Klasörü</span></div>
                       </div>
-                      <button onClick={() => handleInspectUser(st.user_id)} style={{ ...modernBtnStyle, backgroundColor: '#4f46e5', color: '#ffffff', marginTop: '16px' }}>
-                        👁️ Hastalarını İncele
-                      </button>
+                      <div style={{ display: 'flex', gap: '8px', marginTop: '16px' }}>
+                        <button onClick={() => handleInspectUser(st.user_id)} style={{ ...modernBtnStyle, backgroundColor: '#4f46e5', color: '#ffffff', flex: 1 }}>
+                          👁️ İncele
+                        </button>
+                        <button onClick={() => setConfirmModal({ id: st.user_id, title: `Kullanıcı (${st.user_id}) ve Tüm Verileri`, type: 'user' })} style={{ ...modernBtnStyle, backgroundColor: '#dc2626', color: '#ffffff', width: '42px', flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Kullanıcıyı ve Hastalarını Sil">
+                          🗑️
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>
