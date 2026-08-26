@@ -72,6 +72,36 @@ export default function Home() {
 
     const currentUsername = getDisplayName(sessionUser.email).toLowerCase();
 
+    // Ana admin her zaman doğrudan girer
+    if (currentUsername === 'omerfarukeker') {
+      setUser(sessionUser);
+      return;
+    }
+
+    // Giriş yapan kullanıcının onay durumunu çek
+    const { data, error } = await supabase
+      .from('user_approvals')
+      .select('is_approved')
+      .eq('user_id', sessionUser.id)
+      .single();
+
+    if (error) {
+      console.error('Approval check error:', error);
+    }
+
+    // Veritabanında is_approved açıkça TRUE ise içeri al
+    if (data && data.is_approved === true) {
+      setUser(sessionUser);
+    } else {
+      // Onaysızsa çıkış yaptır
+      await supabase.auth.signOut();
+      setUser(null);
+      showToast('Hesabınız yönetici (Ömer Faruk EKER) onayı bekliyor.', 'error');
+    }
+  }, []); // useCallback burada bitmeli
+
+    const currentUsername = getDisplayName(sessionUser.email).toLowerCase();
+
     if (currentUsername === 'omerfarukeker') {
       setUser(sessionUser);
       return;
