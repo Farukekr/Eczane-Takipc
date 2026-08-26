@@ -6,10 +6,11 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-const ADMIN_EMAIL = 'omerfarukeker23@gmail.com';
+// Admin Kullanıcı Adı (Küçük harfle yazın)
+const ADMIN_USERNAME = 'omerfarukeker23';
 
 export default function Home() {
-  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [user, setUser] = useState(null);
@@ -35,6 +36,17 @@ export default function Home() {
   const [adminUsers, setAdminUsers] = useState([]);
   const [adminLoading, setAdminLoading] = useState(false);
 
+  // Kullanıcı adını dahili e-postaya dönüştürme yardımcısı
+  const getInternalEmail = (uName) => {
+    const cleanName = uName.trim().toLowerCase().replace(/\s+/g, '');
+    return `${cleanName}@eczane.local`;
+  };
+
+  const getDisplayName = (emailStr) => {
+    if (!emailStr) return '';
+    return emailStr.split('@')[0];
+  };
+
   const formatTarih = (tarihStr) => {
     if (!tarihStr) return '-';
     const parts = tarihStr.split('-');
@@ -58,14 +70,16 @@ export default function Home() {
       return;
     }
 
+    const currentUsername = getDisplayName(sessionUser.email);
+
     // Admin ise doğrudan al
-    if (sessionUser.email === ADMIN_EMAIL) {
+    if (currentUsername === ADMIN_USERNAME.toLowerCase()) {
       setUser(sessionUser);
       return;
     }
 
     // Normal kullanıcı ise onaylı mı bak
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from('user_approvals')
       .select('is_approved')
       .eq('user_id', sessionUser.id)
@@ -142,17 +156,26 @@ export default function Home() {
     setAdminLoading(false);
   };
 
-  // GİRİŞ YAP & ADMIN ONAY KONTROLLÜ KAYIT
+  // GİRİŞ YAP & ADMIN ONAY KONTROLLÜ KAYIT (KULLANICI ADI İLE)
   const handleAuth = async (e) => {
     e.preventDefault();
     setLoading(true);
 
-    let { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    const internalEmail = getInternalEmail(username);
+
+    let { data, error } = await supabase.auth.signInWithPassword({ 
+      email: internalEmail, 
+      password 
+    });
 
     if (error) {
       if (error.message.includes("Invalid login credentials")) {
-        // Otomatik Kayıt Aç
-        const signUpRes = await supabase.auth.signUp({ email, password });
+        // Hesap yoksa otomatik oluştur
+        const signUpRes = await supabase.auth.signUp({ 
+          email: internalEmail, 
+          password 
+        });
+        
         if (signUpRes.error) {
           showToast(signUpRes.error.message, 'error');
         } else {
@@ -161,7 +184,7 @@ export default function Home() {
         setLoading(false);
         return;
       }
-      showToast(error.message, 'error');
+      showToast('Giriş hatası: ' + error.message, 'error');
     } else {
       if (data.user) {
         await checkUserApprovalAndSet(data.user);
@@ -171,7 +194,7 @@ export default function Home() {
   };
 
   // --- ADMIN ONAY VE KULLANICI YÖNETİM İŞLEMLERİ ---
-  const handleToggleApproval = async (targetUserId, targetEmail, currentStatus) => {
+  const handleToggleApproval = async (targetUserId, targetUsername, currentStatus) => {
     const newStatus = !currentStatus;
     const { error } = await supabase.rpc('admin_toggle_user_approval', { 
       target_user_id: targetUserId, 
@@ -181,28 +204,28 @@ export default function Home() {
     if (error) {
       showToast('Onay durumu güncellenemedi: ' + error.message, 'error');
     } else {
-      showToast(`${targetEmail} kullanıcısının onay durumu güncellendi: ${newStatus ? 'ONAYLANDI ✅' : 'KISA SÜRELİĞİNE DONDURULDU ⏸️'}`, 'success');
+      showToast(`${targetUsername} kullanıcısının onay durumu güncellendi: ${newStatus ? 'ONAYLANDI ✅' : 'ONAY KALDIRILDI ⏸️'}`, 'success');
       fetchAdminStats();
     }
   };
 
-  const handleUserRevoke = async (targetUserId, targetEmail) => {
+  const handleUserRevoke = async (targetUserId, targetUsername) => {
     const { error } = await supabase.rpc('admin_revoke_user_sessions', { target_user_id: targetUserId });
     if (error) {
       showToast('Kullanıcı atılırken hata oluştu: ' + error.message, 'error');
     } else {
-      showToast(`${targetEmail} kullanıcısının oturumu kapatıldı! 🚪`, 'success');
+      showToast(`${targetUsername} kullanıcısının oturumu kapatıldı! 🚪`, 'success');
       fetchAdminStats();
     }
     setConfirmModal(null);
   };
 
-  const handleUserDelete = async (targetUserId, targetEmail) => {
+  const handleUserDelete = async (targetUserId, targetUsername) => {
     const { error } = await supabase.rpc('admin_delete_user', { target_user_id: targetUserId });
     if (error) {
       showToast('Kullanıcı silinirken hata oluştu: ' + error.message, 'error');
     } else {
-      showToast(`${targetEmail} kullanıcısı ve verileri silindi! 🗑️`, 'success');
+      showToast(`${targetUsername} kullanıcısı ve verileri silindi! 🗑️`, 'success');
       fetchAdminStats();
     }
     setConfirmModal(null);
@@ -307,7 +330,8 @@ export default function Home() {
     )
     .sort((a, b) => a.ad.localeCompare(b.ad, 'tr'));
 
-  const isAdmin = user?.email === ADMIN_EMAIL;
+  const currentUserDisplayName = user ? getDisplayName(user.email) : '';
+  const isAdmin = currentUserDisplayName.toLowerCase() === ADMIN_USERNAME.toLowerCase();
 
   return (
     <div style={{ minHeight: '100vh', backgroundColor: '#090d16', fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', color: '#f1f5f9', padding: '24px 16px' }}>
@@ -408,8 +432,8 @@ export default function Home() {
             </div>
             <form onSubmit={handleAuth}>
               <div style={{ marginBottom: '20px' }}>
-                <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: '#9ca3af', marginBottom: '8px', letterSpacing: '0.5px' }}>E-POSTA ADRESİ</label>
-                <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="eczane@ornek.com" style={inputStyle} />
+                <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: '#9ca3af', marginBottom: '8px', letterSpacing: '0.5px' }}>KULLANICI ADI</label>
+                <input type="text" required value={username} onChange={(e) => setUsername(e.target.value)} placeholder="kullanici_adi" style={inputStyle} />
               </div>
               <div style={{ marginBottom: '24px' }}>
                 <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: '#9ca3af', marginBottom: '8px', letterSpacing: '0.5px' }}>PAROLA</label>
@@ -432,7 +456,7 @@ export default function Home() {
               <div>
                 <h1 style={{ fontSize: '20px', fontWeight: '800', margin: 0, color: '#ffffff' }}>Eczane Takip Sistemi</h1>
                 <p style={{ fontSize: '13px', color: '#10b981', margin: '2px 0 0 0', fontWeight: '500' }}>
-                  {user.email} {isAdmin && <span style={{ backgroundColor: '#991b1b', color: '#fecaca', padding: '2px 8px', borderRadius: '6px', fontSize: '11px', marginLeft: '6px' }}>👑 Admin</span>}
+                  👤 {currentUserDisplayName} {isAdmin && <span style={{ backgroundColor: '#991b1b', color: '#fecaca', padding: '2px 8px', borderRadius: '6px', fontSize: '11px', marginLeft: '6px' }}>👑 Admin</span>}
                 </p>
               </div>
             </div>
@@ -476,7 +500,7 @@ export default function Home() {
                   <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '14px' }}>
                     <thead>
                       <tr style={{ borderBottom: '2px solid #1f2937', color: '#9ca3af' }}>
-                        <th style={{ padding: '14px' }}>E-Posta</th>
+                        <th style={{ padding: '14px' }}>Kullanıcı Adı</th>
                         <th style={{ padding: '14px' }}>Admin Onayı</th>
                         <th style={{ padding: '14px', textAlign: 'center' }}>Hasta</th>
                         <th style={{ padding: '14px', textAlign: 'center' }}>Reçete</th>
@@ -489,8 +513,8 @@ export default function Home() {
                       {adminUsers.map(u => (
                         <tr key={u.user_id} style={{ borderBottom: '1px solid #1f2937' }}>
                           <td style={{ padding: '14px', fontWeight: '600', color: '#f3f4f6' }}>
-                            {u.email}
-                            {u.email === ADMIN_EMAIL && <span style={{ color: '#ef4444', marginLeft: '6px', fontSize: '12px' }}>(Siz)</span>}
+                            👤 {u.display_name}
+                            {u.display_name.toLowerCase() === ADMIN_USERNAME.toLowerCase() && <span style={{ color: '#ef4444', marginLeft: '6px', fontSize: '12px' }}>(Siz)</span>}
                           </td>
                           <td style={{ padding: '14px' }}>
                             {u.is_approved ? (
@@ -506,10 +530,10 @@ export default function Home() {
                             {formatTarih(u.created_at?.split('T')[0])}
                           </td>
                           <td style={{ padding: '14px', textAlign: 'right' }}>
-                            {u.email !== ADMIN_EMAIL ? (
+                            {u.display_name.toLowerCase() !== ADMIN_USERNAME.toLowerCase() ? (
                               <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
                                 <button 
-                                  onClick={() => handleToggleApproval(u.user_id, u.email, u.is_approved)}
+                                  onClick={() => handleToggleApproval(u.user_id, u.display_name, u.is_approved)}
                                   style={{ 
                                     backgroundColor: u.is_approved ? '#374151' : '#059669', 
                                     color: '#ffffff', border: 'none', padding: '6px 12px', borderRadius: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: '600' 
@@ -518,13 +542,13 @@ export default function Home() {
                                   {u.is_approved ? '⏸️ Onayı Kaldır' : '✅ Onayla'}
                                 </button>
                                 <button 
-                                  onClick={() => setConfirmModal({ id: u.user_id, title: `${u.email} kişisini siteden at`, type: 'revoke_user' })}
+                                  onClick={() => setConfirmModal({ id: u.user_id, title: `${u.display_name} kullanıcısını siteden at`, type: 'revoke_user' })}
                                   style={{ backgroundColor: '#d97706', color: '#ffffff', border: 'none', padding: '6px 12px', borderRadius: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: '600' }}
                                 >
                                   🚪 Siteden At
                                 </button>
                                 <button 
-                                  onClick={() => setConfirmModal({ id: u.user_id, title: `${u.email} hesabını ve tüm verilerini sil`, type: 'delete_user' })}
+                                  onClick={() => setConfirmModal({ id: u.user_id, title: `${u.display_name} hesabını ve tüm verilerini sil`, type: 'delete_user' })}
                                   style={{ backgroundColor: '#dc2626', color: '#ffffff', border: 'none', padding: '6px 12px', borderRadius: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: '600' }}
                                 >
                                   ❌ Kullanıcıyı Sil
