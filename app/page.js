@@ -17,6 +17,9 @@ export default function Home() {
   // Özel Site İçi Toast Bildirim Durumu
   const [toast, setToast] = useState(null);
 
+  // Özel Silme Onay Modal Durumu (Pop-up yerine)
+  const [deleteConfirm, setDeleteConfirm] = useState(null); // { id, ad, type: 'hasta' | 'recete' | 'rapor' }
+
   const [activeTab, setActiveTab] = useState('hastalar');
   const [hastalar, setHastalar] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -150,9 +153,7 @@ export default function Home() {
     }
   };
 
-  const handleHastaSil = async (hastaId, hastaAd) => {
-    if (!window.confirm(`${hastaAd} isimli hastayı ve ait tüm reçete/raporları silmek istediğinize emin misiniz?`)) return;
-
+  const executeHastaSil = async (hastaId) => {
     await supabase.from('receteler').delete().eq('hasta_id', hastaId);
     await supabase.from('raporlar').delete().eq('hasta_id', hastaId);
     
@@ -161,10 +162,11 @@ export default function Home() {
     if (error) {
       showToast('Hasta silinirken hata oluştu: ' + error.message, 'error');
     } else {
-      showToast('Hasta klasörü ve verileri silindi 🗑️', 'success');
+      showToast('Hasta klasörü ve tüm verileri silindi 🗑️', 'success');
       if (selectedHasta?.id === hastaId) setSelectedHasta(null);
       fetchHastalar();
     }
+    setDeleteConfirm(null);
   };
 
   // --- REÇETE EKLE VE SİL ---
@@ -185,7 +187,7 @@ export default function Home() {
     }
   };
 
-  const handleReceteSil = async (receteId) => {
+  const executeReceteSil = async (receteId) => {
     const { error } = await supabase.from('receteler').delete().eq('id', receteId);
     if (error) {
       showToast('İlaç silinemedi: ' + error.message, 'error');
@@ -193,6 +195,7 @@ export default function Home() {
       showToast('İlaç silindi 🗑️', 'success');
       fetchHastaDetaylari(selectedHasta.id);
     }
+    setDeleteConfirm(null);
   };
 
   // --- RAPOR EKLE VE SİL ---
@@ -213,7 +216,7 @@ export default function Home() {
     }
   };
 
-  const handleRaporSil = async (raporId) => {
+  const executeRaporSil = async (raporId) => {
     const { error } = await supabase.from('raporlar').delete().eq('id', raporId);
     if (error) {
       showToast('Rapor silinemedi: ' + error.message, 'error');
@@ -221,6 +224,7 @@ export default function Home() {
       showToast('Rapor silindi 🗑️', 'success');
       fetchHastaDetaylari(selectedHasta.id);
     }
+    setDeleteConfirm(null);
   };
 
   // --- ALFABETİK SIRALAMA İLE HASTALARI FİLTRELEME ---
@@ -230,7 +234,7 @@ export default function Home() {
       h.soyad?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       h.tc?.includes(searchTerm)
     )
-    .sort((a, b) => a.ad.localeCompare(b.ad, 'tr')); // Türkçe karakter destekli A'dan Z'ye sıralama
+    .sort((a, b) => a.ad.localeCompare(b.ad, 'tr'));
 
   const isAdmin = user?.email === ADMIN_EMAIL;
 
@@ -247,7 +251,7 @@ export default function Home() {
           color: '#ffffff',
           padding: '14px 22px',
           borderRadius: '12px',
-          boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5)',
+          boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5)',
           zIndex: 9999,
           fontWeight: '600',
           fontSize: '14px',
@@ -259,6 +263,81 @@ export default function Home() {
         }}>
           <span style={{ fontSize: '18px' }}>{toast.type === 'error' ? '⚠️' : '✅'}</span>
           <span>{toast.message}</span>
+        </div>
+      )}
+
+      {/* SİTE İÇİ ÖZEL SİLME ONAY PENCERESİ (MODAL) */}
+      {deleteConfirm && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.75)',
+          backdropFilter: 'blur(6px)',
+          display: 'flex',
+          alignItems: 'center',
+          justify: 'center',
+          zIndex: 10000,
+          padding: '16px'
+        }}>
+          <div style={{
+            backgroundColor: '#111827',
+            border: '1px solid #1f2937',
+            borderRadius: '20px',
+            padding: '28px',
+            maxWidth: '440px',
+            width: '100%',
+            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.8)',
+            textAlign: 'center'
+          }}>
+            <div style={{ fontSize: '44px', marginBottom: '12px' }}>⚠️</div>
+            <h3 style={{ margin: '0 0 10px 0', color: '#ffffff', fontSize: '20px', fontWeight: '700' }}>
+              Silme İşlemini Onayla
+            </h3>
+            <p style={{ fontSize: '14px', color: '#9ca3af', margin: '0 0 24px 0', lineHeight: '1.5' }}>
+              <strong style={{ color: '#ef4444' }}>"{deleteConfirm.ad}"</strong> silinecek. Bu işlem geri alınamaz. Devam etmek istiyor musunuz?
+            </p>
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button 
+                onClick={() => setDeleteConfirm(null)}
+                style={{
+                  flex: 1,
+                  backgroundColor: '#1f2937',
+                  color: '#9ca3af',
+                  border: '1px solid #374151',
+                  padding: '12px',
+                  borderRadius: '10px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  fontSize: '14px'
+                }}
+              >
+                İptal
+              </button>
+              <button 
+                onClick={() => {
+                  if (deleteConfirm.type === 'hasta') executeHastaSil(deleteConfirm.id);
+                  if (deleteConfirm.type === 'recete') executeReceteSil(deleteConfirm.id);
+                  if (deleteConfirm.type === 'rapor') executeRaporSil(deleteConfirm.id);
+                }}
+                style={{
+                  flex: 1,
+                  backgroundColor: '#dc2626',
+                  color: '#ffffff',
+                  border: 'none',
+                  padding: '12px',
+                  borderRadius: '10px',
+                  fontWeight: '700',
+                  cursor: 'pointer',
+                  fontSize: '14px'
+                }}
+              >
+                Evet, Sil 🗑️
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -455,7 +534,10 @@ export default function Home() {
                           </div>
 
                           <button 
-                            onClick={(e) => { e.stopPropagation(); handleHastaSil(h.id, `${h.ad} ${h.soyad}`); }}
+                            onClick={(e) => { 
+                              e.stopPropagation(); 
+                              setDeleteConfirm({ id: h.id, ad: `${h.ad} ${h.soyad} (ve tüm reçete/raporları)`, type: 'hasta' });
+                            }}
                             title="Klasörü Sil"
                             style={deleteBtnStyle}
                           >
@@ -497,7 +579,7 @@ export default function Home() {
                       </div>
 
                       <button 
-                        onClick={() => handleHastaSil(selectedHasta.id, `${selectedHasta.ad} ${selectedHasta.soyad}`)}
+                        onClick={() => setDeleteConfirm({ id: selectedHasta.id, ad: `${selectedHasta.ad} ${selectedHasta.soyad} (ve tüm reçete/raporları)`, type: 'hasta' })}
                         style={{ backgroundColor: '#7f1d1d', color: '#fecaca', border: 'none', padding: '10px 16px', borderRadius: '10px', cursor: 'pointer', fontSize: '13px', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '6px' }}
                       >
                         🗑️ Hasta Klasörünü Sil
@@ -539,7 +621,13 @@ export default function Home() {
                                 💊 Doz: {r.doz || '-'} &nbsp;|&nbsp; 📅 Tarih: <strong style={{ color: '#38bdf8' }}>{formatTarih(r.tarih)}</strong>
                               </span>
                             </div>
-                            <button onClick={() => handleReceteSil(r.id)} style={deleteBtnStyle} title="İlacı Sil">🗑️</button>
+                            <button 
+                              onClick={() => setDeleteConfirm({ id: r.id, ad: r.ilac_adi, type: 'recete' })} 
+                              style={deleteBtnStyle} 
+                              title="İlacı Sil"
+                            >
+                              🗑️
+                            </button>
                           </div>
                         ))}
                         {hastaReceteler.length === 0 && <p style={{ fontSize: '13px', color: '#6b7280', textAlign: 'center', padding: '12px 0' }}>Henüz kaydedilmiş ilaç yok.</p>}
@@ -584,7 +672,13 @@ export default function Home() {
                               </span>
                               {rap.notlar && <p style={{ fontSize: '12px', color: '#cbd5e1', margin: '6px 0 0 0', backgroundColor: '#111827', padding: '6px 10px', borderRadius: '6px' }}>📝 {rap.notlar}</p>}
                             </div>
-                            <button onClick={() => handleRaporSil(rap.id)} style={{ ...deleteBtnStyle, marginLeft: '10px' }} title="Raporu Sil">🗑️</button>
+                            <button 
+                              onClick={() => setDeleteConfirm({ id: rap.id, ad: rap.rapor_adi, type: 'rapor' })} 
+                              style={{ ...deleteBtnStyle, marginLeft: '10px' }} 
+                              title="Raporu Sil"
+                            >
+                              🗑️
+                            </button>
                           </div>
                         ))}
                         {hastaRaporlar.length === 0 && <p style={{ fontSize: '13px', color: '#6b7280', textAlign: 'center', padding: '12px 0' }}>Henüz kaydedilmiş rapor yok.</p>}
