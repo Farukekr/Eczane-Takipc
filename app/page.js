@@ -245,7 +245,7 @@ export default function Home() {
             <form onSubmit={handleDirectLogin}>
               <div style={{ marginBottom: '24px' }}>
                 <label style={labelStyle}>KULLANICI ADI</label>
-                <input type="text" required value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Örn: yakup eker" style={modernInputStyle} />
+                <input type="text" required value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Kullanıcı adı" style={modernInputStyle} />
               </div>
               <button type="submit" disabled={loading} style={btnPrimaryStyle}>
                 {loading ? 'Giriş Yapılıyor...' : 'Sisteme Giriş Yap ➔'}
