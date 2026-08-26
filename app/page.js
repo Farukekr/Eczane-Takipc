@@ -77,8 +77,7 @@ export default function Home() {
     const { data } = await supabase
       .from('hastalar')
       .select('*')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false });
+      .eq('user_id', user.id);
     
     if (data) setHastalar(data);
   };
@@ -154,11 +153,9 @@ export default function Home() {
   const handleHastaSil = async (hastaId, hastaAd) => {
     if (!window.confirm(`${hastaAd} isimli hastayı ve ait tüm reçete/raporları silmek istediğinize emin misiniz?`)) return;
 
-    // Önce reçete ve raporları sil
     await supabase.from('receteler').delete().eq('hasta_id', hastaId);
     await supabase.from('raporlar').delete().eq('hasta_id', hastaId);
     
-    // Sonra hastayı sil
     const { error } = await supabase.from('hastalar').delete().eq('id', hastaId);
 
     if (error) {
@@ -226,18 +223,21 @@ export default function Home() {
     }
   };
 
-  const filteredHastalar = hastalar.filter(h => 
-    h.ad?.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    h.soyad?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    h.tc?.includes(searchTerm)
-  );
+  // --- ALFABETİK SIRALAMA İLE HASTALARI FİLTRELEME ---
+  const filteredHastalar = hastalar
+    .filter(h => 
+      h.ad?.toLowerCase().includes(searchTerm.toLowerCase()) || 
+      h.soyad?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      h.tc?.includes(searchTerm)
+    )
+    .sort((a, b) => a.ad.localeCompare(b.ad, 'tr')); // Türkçe karakter destekli A'dan Z'ye sıralama
 
   const isAdmin = user?.email === ADMIN_EMAIL;
 
   return (
     <div style={{ minHeight: '100vh', backgroundColor: '#090d16', fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', color: '#f1f5f9', padding: '24px 16px' }}>
       
-      {/* SİTE İÇİ ŞİK BİLDİRİM (TOAST) */}
+      {/* SİTE İÇİ ŞIK BİLDİRİM (TOAST) */}
       {toast && (
         <div style={{
           position: 'fixed',
@@ -412,7 +412,10 @@ export default function Home() {
                   <div style={cardStyle}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
                       <div>
-                        <h3 style={{ margin: 0, fontSize: '18px', color: '#ffffff' }}>📁 Kayıtlı Hasta Klasörleri ({filteredHastalar.length})</h3>
+                        <h3 style={{ margin: 0, fontSize: '18px', color: '#ffffff', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          📁 Kayıtlı Hasta Klasörleri ({filteredHastalar.length}) 
+                          <span style={{ fontSize: '12px', backgroundColor: '#064e3b', color: '#34d399', padding: '3px 8px', borderRadius: '6px', fontWeight: '600' }}>🔤 A-Z Sıralı</span>
+                        </h3>
                         <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: '#9ca3af' }}>Detayları görmek için klasöre tıklayın</p>
                       </div>
                       <input 
