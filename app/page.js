@@ -17,8 +17,8 @@ export default function Home() {
   // Özel Site İçi Toast Bildirim Durumu
   const [toast, setToast] = useState(null);
 
-  // Özel Silme Onay Modal Durumu (Pop-up yerine)
-  const [deleteConfirm, setDeleteConfirm] = useState(null); // { id, ad, type: 'hasta' | 'recete' | 'rapor' }
+  // Özel Silme/İşlem Onay Modal Durumu
+  const [confirmModal, setConfirmModal] = useState(null);
 
   const [activeTab, setActiveTab] = useState('hastalar');
   const [hastalar, setHastalar] = useState([]);
@@ -35,7 +35,6 @@ export default function Home() {
   const [adminUsers, setAdminUsers] = useState([]);
   const [adminLoading, setAdminLoading] = useState(false);
 
-  // Tarihleri Düzgün Formatlama (YYYY-MM-DD -> DD.MM.YYYY)
   const formatTarih = (tarihStr) => {
     if (!tarihStr) return '-';
     const parts = tarihStr.split('-');
@@ -45,7 +44,6 @@ export default function Home() {
     return tarihStr;
   };
 
-  // Site İçi Şık Toast Bildirim Fonksiyonu
   const showToast = (message, type = 'success') => {
     setToast({ message, type });
     setTimeout(() => {
@@ -53,13 +51,46 @@ export default function Home() {
     }, 4000);
   };
 
+  // KULLANICI GİRİŞ DURUMUNU VE ADMİN ONAYINI KONTROL ET
+  const checkUserApprovalAndSet = async (sessionUser) => {
+    if (!sessionUser) {
+      setUser(null);
+      return;
+    }
+
+    // Admin ise doğrudan al
+    if (sessionUser.email === ADMIN_EMAIL) {
+      setUser(sessionUser);
+      return;
+    }
+
+    // Normal kullanıcı ise onaylı mı bak
+    const { data, error } = await supabase
+      .from('user_approvals')
+      .select('is_approved')
+      .eq('user_id', sessionUser.id)
+      .maybeSingle();
+
+    if (data && data.is_approved) {
+      setUser(sessionUser);
+    } else {
+      await supabase.auth.signOut();
+      setUser(null);
+      showToast('Hesabınız oluşturuldu ancak yönetici (Admin) onayı bekliyor.', 'error');
+    }
+  };
+
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) setUser(session.user);
+      if (session) checkUserApprovalAndSet(session.user);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
+      if (session) {
+        checkUserApprovalAndSet(session.user);
+      } else {
+        setUser(null);
+      }
     });
 
     return () => subscription.unsubscribe();
@@ -111,6 +142,7 @@ export default function Home() {
     setAdminLoading(false);
   };
 
+  // GİRİŞ YAP & ADMIN ONAY KONTROLLÜ KAYIT
   const handleAuth = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -119,21 +151,61 @@ export default function Home() {
 
     if (error) {
       if (error.message.includes("Invalid login credentials")) {
+        // Otomatik Kayıt Aç
         const signUpRes = await supabase.auth.signUp({ email, password });
         if (signUpRes.error) {
           showToast(signUpRes.error.message, 'error');
         } else {
-          showToast('Kayıt başarılı! E-postanıza gelen doğrulama bağlantısına tıklayın.', 'success');
+          showToast('Hesabınız oluşturuldu! Yönetici onayı verildikten sonra giriş yapabilirsiniz.', 'success');
         }
         setLoading(false);
         return;
       }
       showToast(error.message, 'error');
     } else {
-      setUser(data.user);
-      showToast('Başarıyla giriş yapıldı! 👋', 'success');
+      if (data.user) {
+        await checkUserApprovalAndSet(data.user);
+      }
     }
     setLoading(false);
+  };
+
+  // --- ADMIN ONAY VE KULLANICI YÖNETİM İŞLEMLERİ ---
+  const handleToggleApproval = async (targetUserId, targetEmail, currentStatus) => {
+    const newStatus = !currentStatus;
+    const { error } = await supabase.rpc('admin_toggle_user_approval', { 
+      target_user_id: targetUserId, 
+      new_status: newStatus 
+    });
+
+    if (error) {
+      showToast('Onay durumu güncellenemedi: ' + error.message, 'error');
+    } else {
+      showToast(`${targetEmail} kullanıcısının onay durumu güncellendi: ${newStatus ? 'ONAYLANDI ✅' : 'KISA SÜRELİĞİNE DONDURULDU ⏸️'}`, 'success');
+      fetchAdminStats();
+    }
+  };
+
+  const handleUserRevoke = async (targetUserId, targetEmail) => {
+    const { error } = await supabase.rpc('admin_revoke_user_sessions', { target_user_id: targetUserId });
+    if (error) {
+      showToast('Kullanıcı atılırken hata oluştu: ' + error.message, 'error');
+    } else {
+      showToast(`${targetEmail} kullanıcısının oturumu kapatıldı! 🚪`, 'success');
+      fetchAdminStats();
+    }
+    setConfirmModal(null);
+  };
+
+  const handleUserDelete = async (targetUserId, targetEmail) => {
+    const { error } = await supabase.rpc('admin_delete_user', { target_user_id: targetUserId });
+    if (error) {
+      showToast('Kullanıcı silinirken hata oluştu: ' + error.message, 'error');
+    } else {
+      showToast(`${targetEmail} kullanıcısı ve verileri silindi! 🗑️`, 'success');
+      fetchAdminStats();
+    }
+    setConfirmModal(null);
   };
 
   // --- HASTA EKLE VE SİL ---
@@ -166,7 +238,7 @@ export default function Home() {
       if (selectedHasta?.id === hastaId) setSelectedHasta(null);
       fetchHastalar();
     }
-    setDeleteConfirm(null);
+    setConfirmModal(null);
   };
 
   // --- REÇETE EKLE VE SİL ---
@@ -195,7 +267,7 @@ export default function Home() {
       showToast('İlaç silindi 🗑️', 'success');
       fetchHastaDetaylari(selectedHasta.id);
     }
-    setDeleteConfirm(null);
+    setConfirmModal(null);
   };
 
   // --- RAPOR EKLE VE SİL ---
@@ -224,10 +296,9 @@ export default function Home() {
       showToast('Rapor silindi 🗑️', 'success');
       fetchHastaDetaylari(selectedHasta.id);
     }
-    setDeleteConfirm(null);
+    setConfirmModal(null);
   };
 
-  // --- ALFABETİK SIRALAMA İLE HASTALARI FİLTRELEME ---
   const filteredHastalar = hastalar
     .filter(h => 
       h.ad?.toLowerCase().includes(searchTerm.toLowerCase()) || 
@@ -266,19 +337,16 @@ export default function Home() {
         </div>
       )}
 
-      {/* SİTE İÇİ ÖZEL SİLME ONAY PENCERESİ (MODAL) */}
-      {deleteConfirm && (
+      {/* ÖZEL İŞLEM VE SİLME ONAY PENCERESİ (MODAL) */}
+      {confirmModal && (
         <div style={{
           position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
+          top: 0, left: 0, right: 0, bottom: 0,
           backgroundColor: 'rgba(0, 0, 0, 0.75)',
           backdropFilter: 'blur(6px)',
           display: 'flex',
           alignItems: 'center',
-          justify: 'center',
+          justifyContent: 'center',
           zIndex: 10000,
           padding: '16px'
         }}>
@@ -294,47 +362,35 @@ export default function Home() {
           }}>
             <div style={{ fontSize: '44px', marginBottom: '12px' }}>⚠️</div>
             <h3 style={{ margin: '0 0 10px 0', color: '#ffffff', fontSize: '20px', fontWeight: '700' }}>
-              Silme İşlemini Onayla
+              İşlemi Onayla
             </h3>
             <p style={{ fontSize: '14px', color: '#9ca3af', margin: '0 0 24px 0', lineHeight: '1.5' }}>
-              <strong style={{ color: '#ef4444' }}>"{deleteConfirm.ad}"</strong> silinecek. Bu işlem geri alınamaz. Devam etmek istiyor musunuz?
+              <strong style={{ color: '#ef4444' }}>"{confirmModal.title}"</strong> işlemi gerçekleştirilecek. Devam etmek istiyor musunuz?
             </p>
             <div style={{ display: 'flex', gap: '12px' }}>
               <button 
-                onClick={() => setDeleteConfirm(null)}
+                onClick={() => setConfirmModal(null)}
                 style={{
-                  flex: 1,
-                  backgroundColor: '#1f2937',
-                  color: '#9ca3af',
-                  border: '1px solid #374151',
-                  padding: '12px',
-                  borderRadius: '10px',
-                  fontWeight: '600',
-                  cursor: 'pointer',
-                  fontSize: '14px'
+                  flex: 1, backgroundColor: '#1f2937', color: '#9ca3af', border: '1px solid #374151',
+                  padding: '12px', borderRadius: '10px', fontWeight: '600', cursor: 'pointer', fontSize: '14px'
                 }}
               >
                 İptal
               </button>
               <button 
                 onClick={() => {
-                  if (deleteConfirm.type === 'hasta') executeHastaSil(deleteConfirm.id);
-                  if (deleteConfirm.type === 'recete') executeReceteSil(deleteConfirm.id);
-                  if (deleteConfirm.type === 'rapor') executeRaporSil(deleteConfirm.id);
+                  if (confirmModal.type === 'hasta') executeHastaSil(confirmModal.id);
+                  if (confirmModal.type === 'recete') executeReceteSil(confirmModal.id);
+                  if (confirmModal.type === 'rapor') executeRaporSil(confirmModal.id);
+                  if (confirmModal.type === 'revoke_user') handleUserRevoke(confirmModal.id, confirmModal.title);
+                  if (confirmModal.type === 'delete_user') handleUserDelete(confirmModal.id, confirmModal.title);
                 }}
                 style={{
-                  flex: 1,
-                  backgroundColor: '#dc2626',
-                  color: '#ffffff',
-                  border: 'none',
-                  padding: '12px',
-                  borderRadius: '10px',
-                  fontWeight: '700',
-                  cursor: 'pointer',
-                  fontSize: '14px'
+                  flex: 1, backgroundColor: '#dc2626', color: '#ffffff', border: 'none',
+                  padding: '12px', borderRadius: '10px', fontWeight: '700', cursor: 'pointer', fontSize: '14px'
                 }}
               >
-                Evet, Sil 🗑️
+                Evet, Devam Et
               </button>
             </div>
           </div>
@@ -407,36 +463,40 @@ export default function Home() {
             <div style={cardStyle}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
                 <div>
-                  <h2 style={{ margin: 0, color: '#ef4444', fontSize: '20px', fontWeight: '700' }}>👑 Sistemdeki Eczacılar ve Kullanıcılar</h2>
-                  <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: '#9ca3af' }}>Kayıtlı kullanıcılar ve toplam oluşturdukları veri istatistikleri</p>
+                  <h2 style={{ margin: 0, color: '#ef4444', fontSize: '20px', fontWeight: '700' }}>👑 Admin Yönetim Paneli</h2>
+                  <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: '#9ca3af' }}>Kullanıcıların siteye girişini onaylayın, oturumlarını kapatın veya tamamen silin</p>
                 </div>
                 <button onClick={fetchAdminStats} style={{ ...navBtnStyle, backgroundColor: '#1f2937', border: '1px solid #374151' }}>🔄 Verileri Yenile</button>
               </div>
               
               {adminLoading ? (
-                <p style={{ color: '#9ca3af', padding: '20px 0', textAlign: 'center' }}>İstatistikler yükleniyor...</p>
+                <p style={{ color: '#9ca3af', padding: '20px 0', textAlign: 'center' }}>Yükleniyor...</p>
               ) : (
                 <div style={{ overflowX: 'auto' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '14px' }}>
                     <thead>
                       <tr style={{ borderBottom: '2px solid #1f2937', color: '#9ca3af' }}>
                         <th style={{ padding: '14px' }}>E-Posta</th>
-                        <th style={{ padding: '14px' }}>E-posta Onayı</th>
-                        <th style={{ padding: '14px', textAlign: 'center' }}>Hasta Sayısı</th>
+                        <th style={{ padding: '14px' }}>Admin Onayı</th>
+                        <th style={{ padding: '14px', textAlign: 'center' }}>Hasta</th>
                         <th style={{ padding: '14px', textAlign: 'center' }}>Reçete</th>
                         <th style={{ padding: '14px', textAlign: 'center' }}>Rapor</th>
                         <th style={{ padding: '14px' }}>Kayıt Tarihi</th>
+                        <th style={{ padding: '14px', textAlign: 'right' }}>İşlemler</th>
                       </tr>
                     </thead>
                     <tbody>
                       {adminUsers.map(u => (
                         <tr key={u.user_id} style={{ borderBottom: '1px solid #1f2937' }}>
-                          <td style={{ padding: '14px', fontWeight: '600', color: '#f3f4f6' }}>{u.email}</td>
+                          <td style={{ padding: '14px', fontWeight: '600', color: '#f3f4f6' }}>
+                            {u.email}
+                            {u.email === ADMIN_EMAIL && <span style={{ color: '#ef4444', marginLeft: '6px', fontSize: '12px' }}>(Siz)</span>}
+                          </td>
                           <td style={{ padding: '14px' }}>
-                            {u.email_confirmed_at ? (
-                              <span style={{ color: '#34d399', backgroundColor: '#064e3b', padding: '4px 10px', borderRadius: '6px', fontSize: '12px', fontWeight: '600' }}>Verified</span>
+                            {u.is_approved ? (
+                              <span style={{ color: '#34d399', backgroundColor: '#064e3b', padding: '4px 10px', borderRadius: '6px', fontSize: '12px', fontWeight: '600' }}>✅ Giriş İzinli</span>
                             ) : (
-                              <span style={{ color: '#fca5a5', backgroundColor: '#451a1a', padding: '4px 10px', borderRadius: '6px', fontSize: '12px', fontWeight: '600' }}>Onay Bekliyor</span>
+                              <span style={{ color: '#fca5a5', backgroundColor: '#451a1a', padding: '4px 10px', borderRadius: '6px', fontSize: '12px', fontWeight: '600' }}>⏳ Onay Bekliyor</span>
                             )}
                           </td>
                           <td style={{ padding: '14px', color: '#38bdf8', fontWeight: 'bold', textAlign: 'center' }}>{u.total_hastalar}</td>
@@ -444,6 +504,35 @@ export default function Home() {
                           <td style={{ padding: '14px', color: '#34d399', fontWeight: 'bold', textAlign: 'center' }}>{u.total_raporlar}</td>
                           <td style={{ padding: '14px', color: '#9ca3af', fontSize: '13px' }}>
                             {formatTarih(u.created_at?.split('T')[0])}
+                          </td>
+                          <td style={{ padding: '14px', textAlign: 'right' }}>
+                            {u.email !== ADMIN_EMAIL ? (
+                              <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                                <button 
+                                  onClick={() => handleToggleApproval(u.user_id, u.email, u.is_approved)}
+                                  style={{ 
+                                    backgroundColor: u.is_approved ? '#374151' : '#059669', 
+                                    color: '#ffffff', border: 'none', padding: '6px 12px', borderRadius: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: '600' 
+                                  }}
+                                >
+                                  {u.is_approved ? '⏸️ Onayı Kaldır' : '✅ Onayla'}
+                                </button>
+                                <button 
+                                  onClick={() => setConfirmModal({ id: u.user_id, title: `${u.email} kişisini siteden at`, type: 'revoke_user' })}
+                                  style={{ backgroundColor: '#d97706', color: '#ffffff', border: 'none', padding: '6px 12px', borderRadius: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: '600' }}
+                                >
+                                  🚪 Siteden At
+                                </button>
+                                <button 
+                                  onClick={() => setConfirmModal({ id: u.user_id, title: `${u.email} hesabını ve tüm verilerini sil`, type: 'delete_user' })}
+                                  style={{ backgroundColor: '#dc2626', color: '#ffffff', border: 'none', padding: '6px 12px', borderRadius: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: '600' }}
+                                >
+                                  ❌ Kullanıcıyı Sil
+                                </button>
+                              </div>
+                            ) : (
+                              <span style={{ fontSize: '12px', color: '#6b7280' }}>Admin Korumalı</span>
+                            )}
                           </td>
                         </tr>
                       ))}
@@ -536,7 +625,7 @@ export default function Home() {
                           <button 
                             onClick={(e) => { 
                               e.stopPropagation(); 
-                              setDeleteConfirm({ id: h.id, ad: `${h.ad} ${h.soyad} (ve tüm reçete/raporları)`, type: 'hasta' });
+                              setConfirmModal({ id: h.id, title: `${h.ad} ${h.soyad} klasörü ve tüm verileri`, type: 'hasta' });
                             }}
                             title="Klasörü Sil"
                             style={deleteBtnStyle}
@@ -579,7 +668,7 @@ export default function Home() {
                       </div>
 
                       <button 
-                        onClick={() => setDeleteConfirm({ id: selectedHasta.id, ad: `${selectedHasta.ad} ${selectedHasta.soyad} (ve tüm reçete/raporları)`, type: 'hasta' })}
+                        onClick={() => setConfirmModal({ id: selectedHasta.id, title: `${selectedHasta.ad} ${selectedHasta.soyad} klasörü`, type: 'hasta' })}
                         style={{ backgroundColor: '#7f1d1d', color: '#fecaca', border: 'none', padding: '10px 16px', borderRadius: '10px', cursor: 'pointer', fontSize: '13px', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '6px' }}
                       >
                         🗑️ Hasta Klasörünü Sil
@@ -622,7 +711,7 @@ export default function Home() {
                               </span>
                             </div>
                             <button 
-                              onClick={() => setDeleteConfirm({ id: r.id, ad: r.ilac_adi, type: 'recete' })} 
+                              onClick={() => setConfirmModal({ id: r.id, title: r.ilac_adi, type: 'recete' })} 
                               style={deleteBtnStyle} 
                               title="İlacı Sil"
                             >
@@ -673,7 +762,7 @@ export default function Home() {
                               {rap.notlar && <p style={{ fontSize: '12px', color: '#cbd5e1', margin: '6px 0 0 0', backgroundColor: '#111827', padding: '6px 10px', borderRadius: '6px' }}>📝 {rap.notlar}</p>}
                             </div>
                             <button 
-                              onClick={() => setDeleteConfirm({ id: rap.id, ad: rap.rapor_adi, type: 'rapor' })} 
+                              onClick={() => setConfirmModal({ id: rap.id, title: rap.rapor_adi, type: 'rapor' })} 
                               style={{ ...deleteBtnStyle, marginLeft: '10px' }} 
                               title="Raporu Sil"
                             >
